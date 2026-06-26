@@ -122,7 +122,7 @@
 <header>
   <div>
     <h1>🩸 피검사 결과 관리</h1>
-    <div class="sub">검사 결과를 누적 기록하고, 표준 기준치 대비 추이를 분석합니다 <span style="opacity:.5">· 버전 2026-06-26-v13</span></div>
+    <div class="sub">검사 결과를 누적 기록하고, 표준 기준치 대비 추이를 분석합니다 <span style="opacity:.5">· 버전 2026-06-26-v14</span></div>
   </div>
   <div class="row">
     <button class="btn" onclick="exportCSV()">CSV 내보내기</button>
@@ -213,6 +213,7 @@
         <button class="btn primary" onclick="saveEntry()">💾 이력에 추가 + 분석 갱신</button>
         <button class="btn" onclick="resetEntry()">초기화</button>
       </div>
+      <div id="saveResult" style="margin-top:12px"></div>
       <div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px">
         <div style="font-weight:700;margin-bottom:8px">☁️ 구글드라이브 연동 (PC·폰 공통 저장소)</div>
         <div class="row" style="align-items:center">
@@ -466,35 +467,35 @@ async function saveEntry(){
   DB.records.push({date,inst:document.getElementById("entryInst").value.trim(),note:document.getElementById("entryNote").value.trim(),vals,files:pendingFiles});
   DB.records.sort((a,b)=>a.date.localeCompare(b.date));
   save();pendingFiles=[];resetEntry();
-  // 즉시 화면 반응(모바일에서 멈춘 듯 보이지 않게) + 그래프 갱신
-  setSaveBanner("✅ 이력에 추가했습니다 (총 "+DB.records.length+"건). 드라이브 동기화 중…","");
-  tab("dash");
-  // 백그라운드 동기화 (실패해도 멈추지 않음)
+  renderDash();   // 대시보드 분석을 미리 갱신(탭 전환은 하지 않음 — 결과를 이 화면에서 바로 보여줌)
+  // 결과는 '저장 버튼 바로 아래'에 표시 (모바일에서 확실히 보이게)
+  setSaveResult("✅ 이력에 추가했습니다 (총 "+DB.records.length+"건). 드라이브 동기화 중…","");
+  // 백그라운드 동기화 (모바일에선 자동 인증이 막힐 수 있어, 실패 시 버튼으로 직접 저장)
   const r=await syncAll();
   if(r.ok.length){
-    setSaveBanner("✅ 저장 완료 · 드라이브 동기화됨","ok");
+    setSaveResult("✅ 저장 완료 · ☁️ 드라이브 동기화됨 (총 "+DB.records.length+"건)","ok");
   }else if(r.fail.length){
-    setSaveBanner("⚠ 앱에는 저장됐지만 <b>드라이브 동기화 실패</b>: "+r.fail.join(", ")+" &nbsp;<button class='btn small' onclick='driveSyncNow()'>☁️ 지금 드라이브에 저장</button>","bad");
+    setSaveResult("✅ 앱에 저장됨. ⚠ 드라이브 자동 동기화는 막혔습니다(모바일 보안). 아래 버튼을 누르면 올라갑니다:<br><button class='btn primary small' style='margin-top:8px' onclick='driveSyncNow()'>☁️ 지금 드라이브에 저장</button>","warn");
   }else{
-    setSaveBanner("✅ 저장됨 · 구글드라이브 미연결 &nbsp;<button class='btn small' onclick='driveConnect()'>구글드라이브 연결</button>","warn");
+    setSaveResult("✅ 앱에 저장됨 · 구글드라이브 미연결<br><button class='btn primary small' style='margin-top:8px' onclick='driveConnect()'>구글드라이브 연결</button>","warn");
   }
 }
-function setSaveBanner(html,cls){
-  const e=document.getElementById("saveBanner");if(!e)return;
+function setSaveResult(html,cls){
+  const e=document.getElementById("saveResult");if(!e)return;
   if(!html){e.innerHTML="";return;}
   const c=(cls==="ok"||cls==="bad"||cls==="warn")?cls:"";
-  e.innerHTML="<div class=\"alert "+c+"\" style=\"margin-bottom:14px\">"+html+"</div>";
+  e.innerHTML="<div class=\"alert "+c+"\">"+html+"</div>";
 }
-// 직접 탭(버튼 제스처)으로 드라이브에 즉시 저장 — 필요 시 정식 인증 허용
+// 직접 탭(버튼 제스처)으로 드라이브에 즉시 저장 — 모바일에서 인증 팝업 정상 동작
 async function driveSyncNow(){
   if(!driveFileId)return driveConnect();
-  setSaveBanner("☁️ 드라이브에 저장 중…","");
+  setSaveResult("☁️ 드라이브에 저장 중… (로그인 창이 뜨면 허용하세요)","");
   try{
-    await driveGetToken(false);            // 버튼 제스처 → 팝업 허용(모바일 안전)
+    await driveGetToken(false);            // 버튼 제스처 → 인증 UI 허용
     await driveWriteId(driveFileId);
-    setSaveBanner("✅ 드라이브에 저장 완료","ok");
+    setSaveResult("✅ 드라이브에 저장 완료","ok");
   }catch(e){
-    setSaveBanner("⚠ 드라이브 저장 실패: "+e.message+" &nbsp;<button class='btn small' onclick='driveConnect()'>다시 연결</button>","bad");
+    setSaveResult("⚠ 드라이브 저장 실패: "+e.message+"<br><button class='btn primary small' style='margin-top:8px' onclick='driveConnect()'>구글드라이브 다시 연결</button>","bad");
   }
 }
 
@@ -717,7 +718,7 @@ async function driveGetToken(silent){
       callback:(r)=>{ done=true; if(r&&r.error)return rej(new Error(r.error)); gToken=r.access_token; gTokenExp=Date.now()+((r.expires_in||3600)*1000); res(gToken); }
     });
     try{ gTokenClient.requestAccessToken(silent?{prompt:""}:{}); }catch(e){ return rej(e); }
-    setTimeout(()=>{ if(!done)rej(new Error(silent?"토큰 만료 — '구글드라이브 연결' 또는 '지금 드라이브에 저장'을 누르세요":"인증 시간 초과")); }, silent?6000:60000);
+    setTimeout(()=>{ if(!done)rej(new Error(silent?"자동 인증 막힘(모바일) — '지금 드라이브에 저장'을 누르세요":"인증 시간 초과")); }, silent?3000:60000);
   });
 }
 async function driveFetch(url,opt){
