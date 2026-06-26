@@ -677,24 +677,29 @@ function ensureGis(){return new Promise((res,rej)=>{
   s.onload=()=>res();s.onerror=()=>rej(new Error("Google 로그인 스크립트 로드 실패(인터넷 확인)"));
   document.head.appendChild(s);
 });}
-async function driveGetToken(){
+function driveTokenValid(){return gToken && Date.now()<gTokenExp-60000;}
+/* silent=true: 팝업 없이 조용히 토큰 갱신(저장 등 백그라운드용, 모바일 안전)
+   silent=false: 계정 선택/동의 UI 표시(명시적 '연결' 버튼용) */
+async function driveGetToken(silent){
   await ensureGis();
   const cid=gClientId();
   if(!cid)throw new Error("Google 클라이언트 ID를 입력하세요");
-  if(gToken && Date.now()<gTokenExp-60000)return gToken;
+  if(driveTokenValid())return gToken;
   return new Promise((res,rej)=>{
+    let done=false;
     gTokenClient=google.accounts.oauth2.initTokenClient({
       client_id:cid, scope:"https://www.googleapis.com/auth/drive",
-      callback:(r)=>{ if(r&&r.error)return rej(new Error(r.error)); gToken=r.access_token; gTokenExp=Date.now()+((r.expires_in||3600)*1000); res(gToken); }
+      callback:(r)=>{ done=true; if(r&&r.error)return rej(new Error(r.error)); gToken=r.access_token; gTokenExp=Date.now()+((r.expires_in||3600)*1000); res(gToken); }
     });
-    gTokenClient.requestAccessToken();
+    try{ gTokenClient.requestAccessToken(silent?{prompt:""}:{}); }catch(e){ return rej(e); }
+    setTimeout(()=>{ if(!done)rej(new Error(silent?"토큰 만료 — '구글드라이브 연결'을 다시 누르세요":"인증 시간 초과")); }, silent?8000:60000);
   });
 }
 async function driveFetch(url,opt){
   opt=opt||{}; opt.cache="no-store";   // 캐시된 옛 버전이 아니라 항상 최신을 가져옴
-  opt.headers=Object.assign({},opt.headers||{},{Authorization:"Bearer "+await driveGetToken()});
+  opt.headers=Object.assign({},opt.headers||{},{Authorization:"Bearer "+await driveGetToken(true)});
   let r=await fetch(url,opt);
-  if(r.status===401){ gToken=null; opt.headers.Authorization="Bearer "+await driveGetToken(); r=await fetch(url,opt); }
+  if(r.status===401){ gToken=null; opt.headers.Authorization="Bearer "+await driveGetToken(true); r=await fetch(url,opt); }
   return r;
 }
 async function driveFind(name){
@@ -721,7 +726,7 @@ async function driveCreate(name){
 async function driveConnect(){
   setDriveState("구글 로그인 중…");
   try{
-    await driveGetToken();
+    await driveGetToken(false);   // 명시적 연결: 계정 선택/동의 UI 허용
     const name=driveFileName();
     setDriveState("드라이브에서 '"+name+"' 찾는 중…");
     let id=await driveFind(name);
@@ -744,6 +749,7 @@ async function driveConnect(){
 async function driveReload(){
   if(!driveFileId)return alert("먼저 '구글드라이브 연결'을 해주세요.");
   try{
+    await driveGetToken(false);   // 버튼 제스처: 필요시 재인증 UI 허용
     // 읽기 전용: 드라이브 → 앱 (다시 쓰지 않음 → 덮어쓰기로 인한 행 삭제 방지)
     const txt=await driveReadId(driveFileId);
     importCsvText(txt,true);
