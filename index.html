@@ -183,13 +183,8 @@
         <button class="btn primary" onclick="saveEntry()">💾 이력에 추가 + 분석 갱신</button>
         <button class="btn" onclick="resetEntry()">초기화</button>
       </div>
-      <div class="row" style="margin-top:10px;align-items:center">
-        <button class="btn" onclick="linkCsv()">📄 로컬 CSV 파일 연결</button>
-        <button class="btn" onclick="reloadCsv()">🔄 새로고침</button>
-        <span id="csvLinkState" class="muted small">미연결 — 저장은 브라우저에 기록됩니다.</span>
-      </div>
       <div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px">
-        <div style="font-weight:700;margin-bottom:8px">☁️ 구글드라이브 연동 (어디서나 동기화)</div>
+        <div style="font-weight:700;margin-bottom:8px">☁️ 구글드라이브 연동 (PC·폰 공통 저장소)</div>
         <div class="row" style="align-items:center">
           <input type="text" id="gClientId" placeholder="Google 클라이언트 ID (....apps.googleusercontent.com)" style="flex:1;min-width:220px" oninput="saveDriveCfg()">
           <input type="text" id="gFileName" value="피검사_이력.csv" style="width:160px" oninput="saveDriveCfg()" title="드라이브에서 찾을 파일명">
@@ -200,6 +195,7 @@
           <span id="driveState" class="muted small">미연결</span>
         </div>
         <div class="muted small" style="margin-top:8px">파일명으로 드라이브 전체에서 찾아 연결합니다(15.claude/2.건강관리의 그 파일). 연결 후 '저장' 시 드라이브 파일이 자동 갱신되고, 추이·전체데이터도 이 파일을 기준으로 표시됩니다.</div>
+        <div class="muted small" style="margin-top:6px">현재 사이트 주소(origin): <code id="siteOrigin">-</code><br>이 주소를 구글 OAuth <b>승인된 JavaScript 원본</b>에 등록해야 이 사이트에서 드라이브가 동작합니다(경로·끝슬래시 없이).</div>
       </div>
       <div class="muted small" style="margin-top:10px">
         💡 사진/PDF의 수치 자동 판독이 필요하면 Claude 채팅에 파일을 올려주세요. 판독한 값을 입력하거나 CSV로 받아 "가져오기" 하면 됩니다.
@@ -444,8 +440,8 @@ async function saveEntry(){
   const r=await syncAll();
   let msg="✅ 이력에 추가하고 분석을 갱신했습니다.";
   if(r.ok.length)msg+="\n파일 저장 성공: "+r.ok.join(", ");
-  if(r.fail.length)msg+="\n⚠ 파일 저장 실패 → "+r.fail.join(", ")+"\n위에서 해당 연결(드라이브/로컬)을 다시 누른 뒤 저장하세요.";
-  if(!r.ok.length&&!r.fail.length)msg+="\n(아직 드라이브/로컬 CSV가 연결되지 않았습니다. 위에서 연결하면 파일에도 자동 저장됩니다. 또는 'CSV 내보내기'.)";
+  if(r.fail.length)msg+="\n⚠ 드라이브 저장 실패 → "+r.fail.join(", ")+"\n'구글드라이브 연결'을 다시 누른 뒤 저장하세요.";
+  if(!r.ok.length&&!r.fail.length)msg+="\n(아직 구글드라이브가 연결되지 않았습니다. 위에서 '구글드라이브 연결'을 하면 파일에 자동 저장됩니다. 임시 백업은 'CSV 내보내기'.)";
   alert(msg);tab("dash");
 }
 
@@ -710,7 +706,11 @@ async function driveConnect(){
     setDriveState("☁️ 연결됨: "+name+" · "+DB.records.length+"건");
     tab("dash");
     alert("구글드라이브 연결 완료. 데이터를 합쳐 총 "+DB.records.length+"건으로 동기화했습니다."+(r.ok.length?"\n저장: "+r.ok.join(", "):"")+(r.fail.length?"\n⚠ 실패: "+r.fail.join(", "):""));
-  }catch(e){setDriveState("연결 실패: "+e.message);alert("드라이브 연결 실패: "+e.message);}
+  }catch(e){
+    setDriveState("연결 실패: "+e.message);
+    let o="";try{o=location.origin;}catch(_){}
+    alert("드라이브 연결 실패: "+e.message+"\n\n현재 사이트 주소: "+o+"\n이 주소가 구글 OAuth '승인된 JavaScript 원본'에 등록돼 있어야 합니다(경로·끝슬래시 없이). 등록 후 1~2분 뒤 다시 시도하세요.");
+  }
 }
 async function driveReload(){
   if(!driveFileId)return alert("먼저 '구글드라이브 연결'을 해주세요.");
@@ -732,12 +732,6 @@ async function syncAll(){
   if(driveFileId){
     try{ await driveWriteId(driveFileId); ok.push("☁️드라이브"); }
     catch(e){ fail.push("드라이브("+e.message+")"); }
-  }
-  if(csvHandle){
-    try{ const w=await writeCsv();
-      if(w==="file")ok.push("📄로컬");
-      else fail.push("로컬("+(w==="denied"?"쓰기권한 거부":w)+")");
-    }catch(e){ fail.push("로컬("+e.message+")"); }
   }
   return {ok,fail};
 }
@@ -1118,9 +1112,9 @@ oz.addEventListener("drop",async e=>{e.preventDefault();oz.classList.remove("dra
 document.addEventListener("click",e=>{const t=e.target.closest("[data-info]");if(t)showInfo(t.getAttribute("data-info"));});
 
 /* init */
+try{document.getElementById("siteOrigin").textContent=location.origin;}catch(e){}
 loadApiCfg();
 loadDriveCfg();
-restoreCsv();
 buildEntryForm();
 renderDash();
 </script>
