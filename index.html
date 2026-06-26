@@ -122,7 +122,7 @@
 <header>
   <div>
     <h1>🩸 피검사 결과 관리</h1>
-    <div class="sub">검사 결과를 누적 기록하고, 표준 기준치 대비 추이를 분석합니다 <span style="opacity:.5">· 버전 2026-06-26-v14</span></div>
+    <div class="sub">검사 결과를 누적 기록하고, 표준 기준치 대비 추이를 분석합니다 <span style="opacity:.5">· 버전 2026-06-26-v15</span></div>
   </div>
   <div class="row">
     <button class="btn" onclick="exportCSV()">CSV 내보내기</button>
@@ -466,12 +466,14 @@ async function saveEntry(){
   if(!any)return alert("값을 하나 이상 입력하세요");
   DB.records.push({date,inst:document.getElementById("entryInst").value.trim(),note:document.getElementById("entryNote").value.trim(),vals,files:pendingFiles});
   DB.records.sort((a,b)=>a.date.localeCompare(b.date));
-  save();pendingFiles=[];resetEntry();
-  renderDash();   // 대시보드 분석을 미리 갱신(탭 전환은 하지 않음 — 결과를 이 화면에서 바로 보여줌)
-  // 결과는 '저장 버튼 바로 아래'에 표시 (모바일에서 확실히 보이게)
+  save();
+  // 결과를 '저장 버튼 바로 아래'에 가장 먼저 표시 (모바일에서 확실히 보이게)
   setSaveResult("✅ 이력에 추가했습니다 (총 "+DB.records.length+"건). 드라이브 동기화 중…","");
+  pendingFiles=[];
+  try{resetEntry();renderDash();}catch(e){}   // 폼/대시보드 갱신 중 오류가 나도 결과 표시는 유지
   // 백그라운드 동기화 (모바일에선 자동 인증이 막힐 수 있어, 실패 시 버튼으로 직접 저장)
-  const r=await syncAll();
+  let r={ok:[],fail:[]};
+  try{ r=await syncAll(); }catch(e){ r={ok:[],fail:["동기화 오류("+e.message+")"]}; }
   if(r.ok.length){
     setSaveResult("✅ 저장 완료 · ☁️ 드라이브 동기화됨 (총 "+DB.records.length+"건)","ok");
   }else if(r.fail.length){
