@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>피검사 결과 관리</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1e2638; --line:#2a3447;
+    --txt:#e6ebf5; --sub:#8b97ad; --accent:#4f8cff;
+    --ok:#2ecc71; --warn:#f2c14e; --bad:#ff5d5d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+    background:var(--bg);color:var(--txt);line-height:1.5}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  header h1{font-size:20px;margin:0}
+  header .sub{color:var(--sub);font-size:13px;margin-top:4px}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px}
+  .tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+  .tab{padding:9px 16px;border-radius:9px;background:var(--panel);color:var(--sub);
+    cursor:pointer;border:1px solid var(--line);font-size:14px;font-weight:600}
+  .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:20px;margin-bottom:18px}
+  .card h2{margin:0 0 14px;font-size:16px}
+  .btn{padding:9px 16px;border-radius:9px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--txt);cursor:pointer;font-size:14px;font-weight:600}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
+  .btn:hover{filter:brightness(1.1)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit}
+  label{font-size:13px;color:var(--sub);display:block;margin-bottom:4px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--sub);font-weight:600;position:sticky;top:0;background:var(--panel)}
+  .tablescroll{overflow-x:auto}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .pill.ok{background:rgba(46,204,113,.15);color:var(--ok)}
+  .pill.warn{background:rgba(242,193,78,.15);color:var(--warn)}
+  .pill.bad{background:rgba(255,93,93,.15);color:var(--bad)}
+  .pill.na{background:var(--panel2);color:var(--sub)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+  .chartbox{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .chartbox h3{margin:0 0 4px;font-size:14px}
+  .chartbox .meta{font-size:12px;color:var(--sub);margin-bottom:8px}
+  .entryrow{display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:8px;
+    align-items:center;margin-bottom:8px}
+  .entryrow .ref{font-size:11px;color:var(--sub)}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;
+    color:var(--sub);cursor:pointer}
+  .drop.drag{border-color:var(--accent);color:var(--accent)}
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .thumb{width:70px;height:70px;border-radius:8px;object-fit:cover;border:1px solid var(--line)}
+  .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+  .stat .n{font-size:26px;font-weight:800}
+  .stat .l{font-size:12px;color:var(--sub);margin-top:2px}
+  .muted{color:var(--sub);font-size:13px}
+  .alert{padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:8px}
+  .alert.bad{background:rgba(255,93,93,.1);border:1px solid rgba(255,93,93,.3)}
+  .alert.warn{background:rgba(242,193,78,.1);border:1px solid rgba(242,193,78,.3)}
+  .alert.ok{background:rgba(46,204,113,.1);border:1px solid rgba(46,204,113,.3)}
+  .hide{display:none}
+  .small{font-size:12px}
+  [data-info]{cursor:pointer}
+  [data-info]:hover{color:var(--accent)}
+  .ititle .iq{opacity:.45;font-size:11px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal.hide{display:none}   /* 닫힘 규칙이 .modal보다 우선하도록 */
+  .modalcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:460px;width:100%;max-height:85vh;overflow:auto}
+  .modalcard h2{font-size:18px}
+  .modalcard p{line-height:1.6}
+  .ocrzone{border:2px dashed var(--accent);border-radius:12px;padding:26px;text-align:center;
+    background:rgba(79,140,255,.06);cursor:pointer;color:var(--txt)}
+  .ocrzone.drag{background:rgba(79,140,255,.18)}
+  .ocrzone .big{font-size:15px;font-weight:700;margin-bottom:4px}
+  .bar{height:8px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:10px}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+  .auto{outline:2px solid var(--accent);background:rgba(79,140,255,.1)!important}
+  @media(max-width:560px){.entryrow{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🩸 피검사 결과 관리</h1>
+    <div class="sub">검사 결과를 누적 기록하고, 표준 기준치 대비 추이를 분석합니다</div>
+  </div>
+  <div class="row">
+    <button class="btn" onclick="exportCSV()">CSV 내보내기</button>
+    <button class="btn" onclick="document.getElementById('csvIn').click()">CSV 가져오기</button>
+    <input type="file" id="csvIn" accept=".csv" class="hide" onchange="importCSV(event)">
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab on" data-t="dash" onclick="tab('dash')">대시보드</div>
+    <div class="tab" data-t="entry" onclick="tab('entry')">검사 입력</div>
+    <div class="tab" data-t="trend" onclick="tab('trend')">추이 그래프</div>
+    <div class="tab" data-t="data" onclick="tab('data')">전체 데이터</div>
+  </div>
+
+  <!-- 대시보드 -->
+  <section id="dash">
+    <div class="card">
+      <h2>최근 검사 요약</h2>
+      <div id="dashEmpty" class="muted">아직 데이터가 없습니다. "검사 입력" 탭에서 첫 결과를 등록하세요.</div>
+      <div id="dashSummary"></div>
+    </div>
+    <div class="card" id="dashAlertCard" style="display:none">
+      <h2>분석 (최근 검사 기준)</h2>
+      <div id="dashAlerts"></div>
+    </div>
+  </section>
+
+  <!-- 검사 입력 -->
+  <section id="entry" class="hide">
+    <div class="card">
+      <h2>📷 검사지 자동 인식</h2>
+      <div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px">
+        <div class="row" style="align-items:center">
+          <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:700;color:var(--txt)">
+            <input type="checkbox" id="apiOn" onchange="saveApiCfg()"> 🤖 Claude API로 판독(고정밀)
+          </label>
+        </div>
+        <div class="row" id="apiCfg" style="margin-top:10px">
+          <input type="password" id="apiKey" placeholder="API 키 (sk-ant-api03-...)" style="flex:1;min-width:200px" oninput="saveApiCfg()">
+          <button class="btn" onclick="toggleKey()" title="키 표시/숨김">👁</button>
+          <select id="apiModel" onchange="saveApiCfg()">
+            <option value="claude-sonnet-4-6">Sonnet (추천)</option>
+            <option value="claude-haiku-4-5-20251001">Haiku (저렴·빠름)</option>
+            <option value="claude-opus-4-8">Opus (최고정밀)</option>
+          </select>
+          <button class="btn" onclick="testApi()">API 연결 테스트</button>
+        </div>
+        <div class="muted small" style="margin-top:8px">
+          키는 console.anthropic.com에서 발급(사용량 과금). <b>이 브라우저에만 저장</b>되며 판독 시 이미지가 Anthropic API로 전송됩니다. 체크 해제 시 무료 로컬 OCR로 동작합니다.
+        </div>
+      </div>
+      <div class="ocrzone" id="ocrzone" onclick="document.getElementById('ocrIn').click()">
+        <div class="big">검사지 사진(JPG/PNG/HEIC) 또는 PDF를 올리세요</div>
+        <div class="muted small">끌어다 놓거나 클릭 · 글자를 자동 인식해 아래 항목에 채워줍니다</div>
+        <input type="file" id="ocrIn" accept="image/*,application/pdf" multiple class="hide" onchange="ocrFiles(event)">
+        <div class="bar" id="ocrBar" style="display:none"><i></i></div>
+      </div>
+      <div id="ocrStatus" class="muted small" style="margin-top:8px"></div>
+      <div id="ocrResult" style="margin-top:8px"></div>
+      <div class="muted small" style="margin-top:6px">
+        ⚠️ 자동 인식은 사진 품질에 따라 오인식될 수 있습니다. <b>저장 전 반드시 값을 확인</b>하세요. <b>HEIC(아이폰)도 지원</b>하며 업로드 시 자동으로 JPEG로 변환합니다(변환에 수 초 걸릴 수 있음). 흐리거나 여백 많은 사진은 인식이 어려울 수 있어, 그럴 땐 채팅 판독을 권장합니다.
+      </div>
+    </div>
+    <div class="card">
+      <h2>새 검사 결과 입력</h2>
+      <div class="row" style="margin-bottom:16px">
+        <div><label>검사일(채취일)</label><input type="date" id="entryDate"></div>
+        <div><label>검사기관</label><input type="text" id="entryInst" placeholder="예: 은평성모병원"></div>
+        <div><label>메모(선택)</label><input type="text" id="entryNote" placeholder="예: 건강검진"></div>
+      </div>
+      <div id="entryFields"></div>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="newItemName" placeholder="새 항목명" style="flex:1;min-width:120px">
+        <input type="text" id="newItemUnit" placeholder="단위" style="width:90px">
+        <button class="btn" onclick="addCustomField()">+ 항목 추가</button>
+      </div>
+      <hr style="border-color:var(--line);margin:18px 0">
+      <label>검사지 사진 / PDF 첨부 (선택, 기록용)</label>
+      <div class="drop" id="drop" onclick="document.getElementById('fileIn').click()">
+        파일을 끌어다 놓거나 클릭해서 첨부
+        <input type="file" id="fileIn" accept="image/*,application/pdf" multiple class="hide" onchange="addFiles(event)">
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+      <div class="row" style="margin-top:18px">
+        <button class="btn primary" onclick="saveEntry()">💾 이력에 추가 + 분석 갱신</button>
+        <button class="btn" onclick="resetEntry()">초기화</button>
+      </div>
+      <div class="row" style="margin-top:10px;align-items:center">
+        <button class="btn" onclick="linkCsv()">📄 로컬 CSV 파일 연결</button>
+        <button class="btn" onclick="reloadCsv()">🔄 새로고침</button>
+        <span id="csvLinkState" class="muted small">미연결 — 저장은 브라우저에 기록됩니다.</span>
+      </div>
+      <div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px">
+        <div style="font-weight:700;margin-bottom:8px">☁️ 구글드라이브 연동 (어디서나 동기화)</div>
+        <div class="row" style="align-items:center">
+          <input type="text" id="gClientId" placeholder="Google 클라이언트 ID (....apps.googleusercontent.com)" style="flex:1;min-width:220px" oninput="saveDriveCfg()">
+          <input type="text" id="gFileName" value="피검사_이력.csv" style="width:160px" oninput="saveDriveCfg()" title="드라이브에서 찾을 파일명">
+        </div>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <button class="btn primary" onclick="driveConnect()">구글드라이브 연결</button>
+          <button class="btn" onclick="driveReload()">🔄 Drive 새로고침</button>
+          <span id="driveState" class="muted small">미연결</span>
+        </div>
+        <div class="muted small" style="margin-top:8px">파일명으로 드라이브 전체에서 찾아 연결합니다(15.claude/2.건강관리의 그 파일). 연결 후 '저장' 시 드라이브 파일이 자동 갱신되고, 추이·전체데이터도 이 파일을 기준으로 표시됩니다.</div>
+      </div>
+      <div class="muted small" style="margin-top:10px">
+        💡 사진/PDF의 수치 자동 판독이 필요하면 Claude 채팅에 파일을 올려주세요. 판독한 값을 입력하거나 CSV로 받아 "가져오기" 하면 됩니다.
+      </div>
+    </div>
+  </section>
+
+  <!-- 추이 그래프 -->
+  <section id="trend" class="hide">
+    <div class="card">
+      <h2>항목별 추이</h2>
+      <div id="trendEmpty" class="muted">데이터가 2회 이상 쌓이면 추이가 더 잘 보입니다.</div>
+      <div class="grid" id="charts"></div>
+    </div>
+  </section>
+
+  <!-- 전체 데이터 -->
+  <section id="data" class="hide">
+    <div class="card">
+      <h2>전체 데이터</h2>
+      <div class="tablescroll"><table id="dataTable"></table></div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn danger" onclick="clearAll()">전체 삭제</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="infoModal" class="modal hide" onclick="if(event.target===this)closeInfo()">
+  <div class="modalcard">
+    <div id="infoBody"></div>
+    <button class="btn primary" onclick="closeInfo()" style="margin-top:16px">닫기</button>
+  </div>
+</div>
+
+<script>
+/* ===== 검사 항목 / 참고치 — 은평성모병원 검사지(2026-05-22) 기준 =====
+   low/high: 정상(참고)범위, warnHigh: 이 값 이상이면 위험(빨강), 그 사이는 주의(노랑)
+   참고치가 검사지에 인쇄된 항목은 그 값을, 미인쇄 항목(ANC·Globulin·A/G)은 일반 성인 표준치를 사용 */
+const REF = [
+  /* --- 일반혈액(CBC) + 당화혈색소 --- */
+  {k:"HbA1c", unit:"%", low:4.0, high:5.7, warnHigh:6.5},
+  {k:"WBC", unit:"10³/µL", low:4.0, high:10.0},
+  {k:"RBC", unit:"10⁶/µL", low:4.0, high:6.0},
+  {k:"Hemoglobin", unit:"g/dL", low:12.5, high:18.0},
+  {k:"Hematocrit", unit:"%", low:38.0, high:54.0},
+  {k:"Platelet", unit:"10³/µL", low:150, high:450},
+  {k:"호중구%", unit:"%", low:50, high:75},
+  {k:"림프구%", unit:"%", low:20, high:44},
+  {k:"단핵구%", unit:"%", low:2, high:9},
+  {k:"호산구%", unit:"%", low:1, high:5},
+  {k:"호염기구%", unit:"%", low:0, high:2},
+  {k:"ANC", unit:"10³/µL", low:1.5, high:8.0},
+  {k:"MCV", unit:"fL", low:82, high:97},
+  {k:"MCH", unit:"pg", low:27.6, high:33.2},
+  {k:"MCHC", unit:"g/dL", low:32.0, high:36.0},
+  {k:"TSH수용체항체(TSI)", unit:"IU/L", low:0, high:1.75},
+  /* --- 생화학 --- */
+  {k:"Glucose(공복혈당)", unit:"mg/dL", low:70, high:100, warnHigh:126},
+  {k:"Total Protein", unit:"g/dL", low:6.6, high:8.3},
+  {k:"Albumin", unit:"g/dL", low:3.5, high:5.2},
+  {k:"Globulin", unit:"g/dL", low:2.0, high:3.5},
+  {k:"A/G Ratio", unit:"", low:1.1, high:2.2},
+  {k:"BUN(요소질소)", unit:"mg/dL", low:8.0, high:20.0},
+  {k:"Creatinine", unit:"mg/dL", low:0.61, high:1.20},
+  {k:"eGFR(CKD-EPI)", unit:"mL/min/1.73㎡", low:60, high:999},
+  {k:"eGFR(MDRD)", unit:"mL/min/1.73㎡", low:60, high:999},
+  {k:"AST(GOT)", unit:"U/L", low:0, high:50, warnHigh:100},
+  {k:"ALT(GPT)", unit:"U/L", low:1, high:50, warnHigh:100},
+  {k:"Total Bilirubin", unit:"mg/dL", low:0.3, high:1.2, warnHigh:2.0},
+  {k:"γ-GTP", unit:"U/L", low:0, high:54, warnHigh:120},
+  {k:"Uric acid(요산)", unit:"mg/dL", low:3.5, high:7.2, warnHigh:9},
+  {k:"Calcium", unit:"mg/dL", low:8.8, high:10.6},
+  {k:"Phosphorus", unit:"mg/dL", low:2.5, high:4.5},
+  {k:"Sodium", unit:"mmol/L", low:136, high:146},
+  {k:"Potassium", unit:"mmol/L", low:3.5, high:5.1},
+  {k:"Magnesium", unit:"mg/dL", low:1.8, high:2.6},
+  /* --- 지질 / 비타민 / 염증 --- */
+  {k:"CRF(심혈관위험)", unit:"지수", low:0, high:4.8},
+  {k:"Total Cholesterol", unit:"mg/dL", low:70, high:200, warnHigh:240},
+  {k:"Triglyceride", unit:"mg/dL", low:34, high:150, warnHigh:200},
+  {k:"HDL-Cholesterol", unit:"mg/dL", low:40, high:999},
+  {k:"LDL-Cholesterol", unit:"mg/dL", low:0, high:131, warnHigh:160},
+  {k:"Vitamin D 25(OH)", unit:"ng/mL", low:30, high:100},
+  {k:"CRP", unit:"mg/dL", low:0, high:0.5, warnHigh:1},
+  /* --- 갑상선 --- */
+  {k:"Free T4", unit:"ng/dL", low:0.89, high:1.79},
+  {k:"T3", unit:"ng/mL", low:0.81, high:1.97},
+  {k:"TSH", unit:"mIU/L", low:0.17, high:4.05},
+  {k:"TSI Bioassay(%)", unit:"%", low:0, high:140},
+];
+
+const LS="bloodtest_v1";
+let DB=load();
+
+function load(){try{return JSON.parse(localStorage.getItem(LS))||{records:[],customRefs:[]}}catch(e){return{records:[],customRefs:[]}}}
+function save(){localStorage.setItem(LS,JSON.stringify(DB))}
+function allRefs(){return REF.concat(DB.customRefs||[])}
+function refOf(k){return allRefs().find(r=>r.k===k)}
+
+/* 상태 판정: ok / warn / bad / na */
+function status(k,v){
+  const r=refOf(k); if(r==null||v===""||v==null||isNaN(v))return"na";
+  v=parseFloat(v);
+  const hardHigh = r.warnHigh!=null ? r.warnHigh : r.high;
+  if(v < r.low) return v < r.low*0.9 ? "bad" : "warn";
+  if(v > hardHigh) return "bad";
+  if(v > r.high) return "warn";
+  return "ok";
+}
+const PILL={ok:"정상",warn:"주의",bad:"위험",na:"-"};
+
+/* 검사 항목 설명: w=무엇을 보는지, up=높을 때, dn=낮을 때 */
+const INFO={
+ "HbA1c":{w:"최근 2~3개월의 평균 혈당을 반영합니다(당뇨 진단·관리 지표).",up:"당뇨 또는 혈당 조절 불량. 5.7~6.4%는 당뇨 전단계, 6.5% 이상 반복 시 당뇨 의심.",dn:"대개 문제 없음(드물게 빈혈·저혈당)."},
+ "WBC":{w:"감염·염증과 싸우는 백혈구 수입니다.",up:"세균감염·염증·스트레스·흡연.",dn:"면역저하·바이러스감염·골수기능 저하."},
+ "RBC":{w:"산소를 운반하는 적혈구의 수입니다.",up:"탈수·다혈구증.",dn:"빈혈·출혈."},
+ "Hemoglobin":{w:"적혈구 속 산소를 나르는 단백질(빈혈 핵심 지표).",up:"탈수·다혈구증.",dn:"빈혈(철결핍 등)."},
+ "Hematocrit":{w:"전체 혈액 중 적혈구가 차지하는 비율입니다.",up:"탈수·다혈구증.",dn:"빈혈."},
+ "Platelet":{w:"피를 굳게(지혈) 하는 혈소판 수입니다.",up:"염증·철결핍·혈전 위험.",dn:"출혈 경향·간질환·골수문제."},
+ "호중구%":{w:"백혈구 중 세균감염을 막는 호중구 비율입니다.",up:"세균감염·염증·스트레스.",dn:"바이러스감염·약물·골수억제."},
+ "림프구%":{w:"바이러스 면역을 담당하는 림프구 비율입니다.",up:"바이러스감염.",dn:"스트레스·면역저하."},
+ "단핵구%":{w:"만성 염증과 조직 청소를 담당합니다.",up:"만성감염·염증.",dn:""},
+ "호산구%":{w:"알레르기·기생충 반응에 관여합니다.",up:"알레르기·천식·기생충감염.",dn:""},
+ "호염기구%":{w:"알레르기·염증 반응에 관여합니다.",up:"알레르기·만성염증.",dn:""},
+ "ANC":{w:"세균감염을 막는 호중구의 절대 수입니다(감염 방어력).",up:"감염·염증.",dn:"낮으면 감염 위험 증가(호중구감소증)."},
+ "MCV":{w:"적혈구 한 개의 평균 크기입니다(빈혈 종류 구분).",up:"비타민B12·엽산 결핍, 음주, 간질환.",dn:"철결핍성 빈혈, 지중해빈혈."},
+ "MCH":{w:"적혈구 한 개에 든 혈색소의 평균 양입니다.",up:"대구성 빈혈.",dn:"철결핍성 빈혈."},
+ "MCHC":{w:"적혈구 내 혈색소의 평균 농도입니다.",up:"드묾(구상적혈구증 등).",dn:"철결핍성 빈혈."},
+ "TSH수용체항체(TSI)":{w:"갑상선을 자극하는 자가항체입니다.",up:"그레이브스병(갑상선기능항진증) 가능성. 기준치 초과 시 의료진 상담 필요.",dn:"정상."},
+ "Glucose(공복혈당)":{w:"공복 상태의 혈당입니다.",up:"100~125는 공복혈당장애, 126 이상 반복 시 당뇨 의심.",dn:"저혈당(공복·약물 등)."},
+ "Total Protein":{w:"혈액 속 전체 단백질량(영양·간·신장 상태).",up:"탈수·만성염증·일부 혈액질환.",dn:"영양불량·간/신장 질환."},
+ "Albumin":{w:"간에서 만드는 주요 단백질(영양·간기능 지표).",up:"주로 탈수.",dn:"간기능저하·영양불량·신장단백소실."},
+ "Globulin":{w:"면역·염증과 관련된 단백질 묶음입니다.",up:"만성염증·감염·일부 혈액질환.",dn:"면역저하."},
+ "A/G Ratio":{w:"알부민과 글로불린의 비율(간·면역 균형).",up:"",dn:"간·신장·만성염증 시 낮아질 수 있음."},
+ "BUN(요소질소)":{w:"단백질 대사 후 신장으로 배출되는 노폐물입니다.",up:"신장기능저하·탈수·고단백식.",dn:"간기능저하·영양부족."},
+ "Creatinine":{w:"신장 기능을 보는 핵심 노폐물 지표입니다.",up:"신장기능저하.",dn:"근육량 적음(대개 문제 없음)."},
+ "eGFR(CKD-EPI)":{w:"신장이 노폐물을 거르는 능력의 추정치입니다.",up:"정상(높을수록 양호).",dn:"60 미만이면 신장기능 저하 주의."},
+ "eGFR(MDRD)":{w:"또 다른 공식으로 추정한 신장 여과율입니다.",up:"정상.",dn:"60 미만 신장기능 저하."},
+ "AST(GOT)":{w:"간·근육·심장에 있는 효소입니다.",up:"간손상·근육손상·음주.",dn:"대개 의미 없음."},
+ "ALT(GPT)":{w:"주로 간에 있는 효소(간손상에 더 특이적).",up:"간염·지방간·약물성 간손상.",dn:"대개 의미 없음."},
+ "Total Bilirubin":{w:"적혈구가 분해되며 생기는 색소(간·담도 처리).",up:"황달·간담도 질환. 경미한 상승은 길버트증후군(양성)으로 흔함.",dn:""},
+ "γ-GTP":{w:"간·담도 기능과 음주에 민감한 효소입니다.",up:"음주·담도폐색·지방간·약물.",dn:""},
+ "Uric acid(요산)":{w:"퓨린 대사의 최종 산물입니다.",up:"통풍·신장결석 위험·고퓨린식·음주.",dn:"대개 의미 없음."},
+ "Calcium":{w:"뼈·신경·근육 기능에 필요한 미네랄입니다.",up:"부갑상선항진·비타민D과다.",dn:"비타민D부족·부갑상선저하·신장질환."},
+ "Phosphorus":{w:"뼈와 에너지대사에 관여하는 미네랄입니다.",up:"신장기능저하.",dn:"영양·부갑상선·흡수 문제."},
+ "Sodium":{w:"체내 수분·전해질 균형을 보는 지표입니다.",up:"탈수.",dn:"수분과다·일부 호르몬 이상."},
+ "Potassium":{w:"심장·근육 기능에 중요한 전해질입니다.",up:"신장기능저하·약물 — 높으면 부정맥 위험.",dn:"설사·이뇨제 — 낮아도 부정맥 위험."},
+ "Magnesium":{w:"신경·근육·심장 기능에 관여합니다.",up:"신장기능저하.",dn:"영양부족·음주·설사."},
+ "CRF(심혈관위험)":{w:"콜레스테롤 비율 기반 심혈관 위험 지수입니다.",up:"심혈관질환 위험 증가.",dn:"낮을수록 양호."},
+ "Total Cholesterol":{w:"혈액 속 전체 콜레스테롤입니다.",up:"동맥경화·심혈관 위험 증가.",dn:"대개 양호(과도히 낮으면 영양·간 확인)."},
+ "Triglyceride":{w:"혈중 중성지방(에너지 저장 지방)입니다.",up:"비만·과음·당대사 이상, 매우 높으면 췌장염 위험.",dn:"대개 양호."},
+ "HDL-Cholesterol":{w:"혈관을 청소하는 '좋은' 콜레스테롤입니다.",up:"심혈관 보호(높을수록 좋음).",dn:"낮으면 심혈관 위험 증가."},
+ "LDL-Cholesterol":{w:"혈관에 쌓이는 '나쁜' 콜레스테롤입니다.",up:"동맥경화·심혈관 위험 증가.",dn:"대개 양호."},
+ "Vitamin D 25(OH)":{w:"몸의 비타민D 저장량입니다(뼈·면역).",up:"과다보충(드묾).",dn:"30 미만 부족 — 뼈건강·면역 저하, 보충 고려."},
+ "CRP":{w:"몸의 염증 정도를 보는 표지자입니다.",up:"감염·염증·조직손상.",dn:"정상."},
+ "Free T4":{w:"갑상선이 분비하는 주요 호르몬(유리형)입니다.",up:"갑상선기능항진.",dn:"갑상선기능저하."},
+ "T3":{w:"갑상선호르몬 T3입니다.",up:"갑상선기능항진.",dn:"갑상선기능저하·비갑상선질환."},
+ "TSH":{w:"뇌하수체가 갑상선을 조절하는 호르몬입니다(되먹임).",up:"갑상선기능저하.",dn:"갑상선기능항진(매우 낮으면 항진 의심)."},
+ "TSI Bioassay(%)":{w:"갑상선을 자극하는 항체의 활성도입니다.",up:"140% 이상이면 양성(그레이브스병 시사).",dn:"음성(정상)."},
+};
+function showInfo(key){
+  const r=refOf(key), info=INFO[key];
+  let latest=null,ld="";
+  for(let i=DB.records.length-1;i>=0;i--){if(DB.records[i].vals[key]!=null){latest=DB.records[i].vals[key];ld=DB.records[i].date;break;}}
+  let h=`<h2 style="margin-top:0">${key}</h2>`;
+  if(r)h+=`<div class="muted small">정상 참고범위 ${r.low}~${r.high===999?"↑":r.high} ${r.unit}</div>`;
+  if(latest!=null){const s=status(key,latest);h+=`<div style="margin:10px 0"><span class="pill ${s}">${PILL[s]}</span> 최근값 <b>${latest}</b> ${r?r.unit:""} <span class="muted small">(${ld})</span></div>`;}
+  if(info){
+    h+=`<p>${info.w}</p>`;
+    if(info.up)h+=`<div class="small" style="margin-top:6px"><b style="color:var(--bad)">▲ 높을 때</b> · ${info.up}</div>`;
+    if(info.dn)h+=`<div class="small" style="margin-top:4px"><b style="color:var(--accent)">▼ 낮을 때</b> · ${info.dn}</div>`;
+  }else h+=`<p class="muted">이 항목의 표준 설명이 준비되지 않았습니다.</p>`;
+  h+=`<div class="muted small" style="margin-top:14px">※ 일반적인 의학 정보이며 진단이 아닙니다. 이상 수치는 의료진과 상담하세요.</div>`;
+  document.getElementById("infoBody").innerHTML=h;
+  document.getElementById("infoModal").classList.remove("hide");
+}
+function closeInfo(){document.getElementById("infoModal").classList.add("hide");}
+
+/* ===== 탭 ===== */
+function tab(t){
+  ["dash","entry","trend","data"].forEach(s=>document.getElementById(s).classList.toggle("hide",s!==t));
+  document.querySelectorAll(".tab").forEach(e=>e.classList.toggle("on",e.dataset.t===t));
+  if(t==="dash")renderDash();
+  if(t==="trend")renderCharts();
+  if(t==="data")renderTable();
+}
+
+/* ===== 입력 폼 ===== */
+let pendingFiles=[];
+function buildEntryForm(){
+  document.getElementById("entryDate").value=new Date().toISOString().slice(0,10);
+  const box=document.getElementById("entryFields");
+  box.innerHTML="";
+  allRefs().forEach(r=>{
+    const div=document.createElement("div");
+    div.className="entryrow";
+    div.innerHTML=`<div class="ititle" data-info="${r.k}">${r.k} <span class="iq">ⓘ</span></div>
+      <input type="number" step="any" data-k="${r.k}" placeholder="값">
+      <div class="ref">정상 ${r.low}~${r.high===999?"↑":r.high} ${r.unit}</div>
+      <div></div>`;
+    box.appendChild(div);
+  });
+}
+function addCustomField(){
+  const n=document.getElementById("newItemName").value.trim();
+  const u=document.getElementById("newItemUnit").value.trim();
+  if(!n)return alert("항목명을 입력하세요");
+  if(refOf(n))return alert("이미 있는 항목입니다");
+  DB.customRefs.push({k:n,unit:u||"",low:0,high:999,custom:true});save();
+  document.getElementById("newItemName").value="";document.getElementById("newItemUnit").value="";
+  buildEntryForm();
+}
+function addFiles(e){[...e.target.files].forEach(readFile);e.target.value=""}
+function readFile(f){
+  const rd=new FileReader();
+  rd.onload=()=>{pendingFiles.push({name:f.name,type:f.type,data:rd.result});renderThumbs()};
+  rd.readAsDataURL(f);
+}
+function renderThumbs(){
+  document.getElementById("thumbs").innerHTML=pendingFiles.map((f,i)=>
+    f.type.startsWith("image")
+      ?`<img class="thumb" src="${f.data}" title="${f.name}" onclick="rmFile(${i})">`
+      :`<div class="thumb" style="display:flex;align-items:center;justify-content:center;font-size:11px" onclick="rmFile(${i})">📄 PDF</div>`
+  ).join("");
+}
+function rmFile(i){if(confirm("첨부 제거?")){pendingFiles.splice(i,1);renderThumbs()}}
+function resetEntry(){pendingFiles=[];renderThumbs();buildEntryForm();document.getElementById("entryNote").value="";document.getElementById("entryInst").value=""}
+
+async function saveEntry(){
+  const date=document.getElementById("entryDate").value;
+  if(!date)return alert("검사일을 선택하세요");
+  const vals={};let any=false;
+  document.querySelectorAll('#entryFields input[data-k]').forEach(inp=>{
+    if(inp.value!==""){vals[inp.dataset.k]=parseFloat(inp.value);any=true}
+  });
+  if(!any)return alert("값을 하나 이상 입력하세요");
+  DB.records.push({date,inst:document.getElementById("entryInst").value.trim(),note:document.getElementById("entryNote").value.trim(),vals,files:pendingFiles});
+  DB.records.sort((a,b)=>a.date.localeCompare(b.date));
+  save();pendingFiles=[];resetEntry();
+  // 저장 대상: 구글드라이브 연결 우선 → 로컬 파일 → 없으면 안내
+  let msg="이력에 추가하고 분석을 갱신했습니다.";
+  if(driveFileId){
+    const d=await driveWrite();
+    if(d==="drive")msg+="\n☁️ 구글드라이브 파일도 업데이트했습니다.";
+    else msg+="\n⚠ 드라이브 쓰기 실패. 'Drive 새로고침' 후 다시 시도하거나 'CSV 내보내기'로 저장하세요.";
+  }else{
+    const w=await writeCsv();
+    if(w==="file")msg+="\n📄 로컬 CSV 파일도 업데이트했습니다.";
+    else if(w==="nolink")msg+="\n(드라이브 또는 로컬 CSV에 자동 기록하려면 위에서 한 번 연결해 두세요. 또는 'CSV 내보내기' 사용.)";
+    else if(w==="denied"||w==="error")msg+="\n⚠ CSV 파일 쓰기 실패. 'CSV 내보내기'로 저장하세요.";
+  }
+  alert(msg);tab("dash");
+}
+
+/* drag & drop */
+const drop=document.getElementById("drop");
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag")}));
+drop.addEventListener("drop",e=>{[...e.dataTransfer.files].forEach(readFile)});
+
+/* ===== 대시보드 ===== */
+function renderDash(){
+  const recs=DB.records;
+  const empty=document.getElementById("dashEmpty");
+  const sum=document.getElementById("dashSummary");
+  const alertCard=document.getElementById("dashAlertCard");
+  if(recs.length===0){empty.style.display="block";sum.innerHTML="";alertCard.style.display="none";return}
+  empty.style.display="none";
+  const last=recs[recs.length-1];
+  let ok=0,warn=0,bad=0;
+  Object.entries(last.vals).forEach(([k,v])=>{const s=status(k,v);if(s==="ok")ok++;else if(s==="warn")warn++;else if(s==="bad")bad++});
+  sum.innerHTML=`<div class="muted" style="margin-bottom:12px">최근 검사일: <b>${last.date}</b> ${last.inst?"· "+last.inst:""} ${last.note?"· "+last.note:""} · 총 ${recs.length}회 기록</div>
+    <div class="summary">
+      <div class="stat"><div class="n" style="color:var(--ok)">${ok}</div><div class="l">정상</div></div>
+      <div class="stat"><div class="n" style="color:var(--warn)">${warn}</div><div class="l">주의</div></div>
+      <div class="stat"><div class="n" style="color:var(--bad)">${bad}</div><div class="l">위험</div></div>
+    </div>`;
+  // 분석
+  alertCard.style.display="block";
+  const al=document.getElementById("dashAlerts");
+  const items=Object.entries(last.vals).map(([k,v])=>({k,v,s:status(k,v)}));
+  const flagged=items.filter(i=>i.s==="bad"||i.s==="warn");
+  let html="";
+  if(flagged.length===0){
+    html=`<div class="alert ok">최근 검사에서 기준치를 벗어난 항목이 없습니다. 양호한 상태입니다.</div>`;
+  }else{
+    flagged.sort((a,b)=>(b.s==="bad")-(a.s==="bad")).forEach(i=>{
+      const r=refOf(i.k);
+      const prev=prevValue(i.k,recs.length-1);
+      let trend="";
+      if(prev!=null){const d=i.v-prev;trend=d>0?`▲ ${(+d.toFixed(2))} 증가`:d<0?`▼ ${(+Math.abs(d).toFixed(2))} 감소`:"변동 없음"}
+      html+=`<div class="alert ${i.s==="bad"?"bad":"warn"}">
+        <b class="ititle" data-info="${i.k}">${i.k} <span class="iq">ⓘ</span>: ${i.v} ${r?r.unit:""}</b> <span class="pill ${i.s}">${PILL[i.s]}</span>
+        <div class="small muted">정상범위 ${r?r.low+"~"+(r.high===999?"↑":r.high):"-"} ${r?r.unit:""} ${prev!=null?"· 직전 대비 "+trend:""}</div>
+      </div>`;
+    });
+  }
+  html+=`<div class="muted small" style="margin-top:8px">※ 표준 기준치(일반 성인 남성) 기반 참고용 분석이며, 의학적 진단이 아닙니다. 이상 수치는 의료진과 상담하세요.</div>`;
+  al.innerHTML=html;
+}
+function prevValue(k,idx){for(let i=idx-1;i>=0;i--){if(DB.records[i].vals[k]!=null)return DB.records[i].vals[k]}return null}
+
+/* ===== 추이 차트 ===== */
+let charts=[];
+function renderCharts(){
+  charts.forEach(c=>c.destroy());charts=[];
+  const wrap=document.getElementById("charts");
+  wrap.innerHTML="";
+  document.getElementById("trendEmpty").style.display=DB.records.length?"none":"block";
+  const keys=new Set();DB.records.forEach(r=>Object.keys(r.vals).forEach(k=>keys.add(k)));
+  [...keys].forEach(k=>{
+    const r=refOf(k);
+    const labels=[],data=[];
+    DB.records.forEach(rec=>{if(rec.vals[k]!=null){labels.push(rec.date);data.push(rec.vals[k])}});
+    const box=document.createElement("div");box.className="chartbox";
+    const last=data[data.length-1];const s=status(k,last);
+    box.innerHTML=`<h3 class="ititle" data-info="${k}">${k} <span class="iq">ⓘ</span> <span class="pill ${s}">${PILL[s]}</span></h3>
+      <div class="meta">최근 ${last} ${r?r.unit:""} · 정상 ${r?r.low+"~"+(r.high===999?"↑":r.high):"-"}</div>
+      <canvas></canvas>`;
+    wrap.appendChild(box);
+    const ctx=box.querySelector("canvas");
+    const ds=[{label:k,data,borderColor:"#4f8cff",backgroundColor:"rgba(79,140,255,.15)",
+      tension:.3,fill:true,pointRadius:4,pointBackgroundColor:data.map(v=>{const st=status(k,v);return st==="bad"?"#ff5d5d":st==="warn"?"#f2c14e":"#2ecc71"})}];
+    const ann=[];
+    charts.push(new Chart(ctx,{type:"line",data:{labels,datasets:ds},
+      options:{responsive:true,plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{color:"#8b97ad",font:{size:10}},grid:{color:"#2a3447"}},
+          y:{ticks:{color:"#8b97ad",font:{size:10}},grid:{color:"#2a3447"},
+             suggestedMin:r&&r.low>0?r.low*0.8:undefined,
+             suggestedMax:r&&r.high!==999?r.high*1.2:undefined}
+        }}}));
+  });
+}
+
+/* ===== 데이터 테이블 ===== */
+function renderTable(){
+  const t=document.getElementById("dataTable");
+  if(DB.records.length===0){t.innerHTML="<tr><td class='muted'>데이터 없음</td></tr>";return}
+  const keys=[];DB.records.forEach(r=>Object.keys(r.vals).forEach(k=>{if(!keys.includes(k))keys.push(k)}));
+  let head="<tr><th>검사일</th><th>검사기관</th><th>메모</th>"+keys.map(k=>`<th data-info="${k}">${k} ⓘ</th>`).join("")+"<th></th></tr>";
+  let body="";
+  DB.records.slice().reverse().forEach((rec)=>{
+    const realIdx=DB.records.indexOf(rec);
+    body+=`<tr><td>${rec.date}</td><td>${rec.inst||""}</td><td>${rec.note||""}</td>`+
+      keys.map(k=>{const v=rec.vals[k];if(v==null)return"<td>-</td>";const s=status(k,v);
+        const c=s==="bad"?"var(--bad)":s==="warn"?"var(--warn)":"var(--txt)";
+        return `<td style="color:${c}">${v}</td>`}).join("")+
+      `<td><button class="btn danger small" onclick="delRec(${realIdx})">삭제</button></td></tr>`;
+  });
+  t.innerHTML=head+body;
+}
+function delRec(i){if(confirm("이 기록을 삭제할까요?")){DB.records.splice(i,1);save();renderTable();renderDash()}}
+function clearAll(){if(confirm("모든 데이터를 삭제합니다. 계속할까요?")){DB={records:[],customRefs:[]};save();renderTable();renderDash();renderCharts()}}
+
+/* ===== CSV ===== */
+function buildCsv(){
+  const keys=[];DB.records.forEach(r=>Object.keys(r.vals).forEach(k=>{if(!keys.includes(k))keys.push(k)}));
+  let csv="검사일,검사기관,메모,"+keys.join(",")+"\n";
+  DB.records.forEach(rec=>{
+    csv+=`${rec.date},${(rec.inst||"").replace(/,/g,";")},${(rec.note||"").replace(/,/g,";")},`+keys.map(k=>rec.vals[k]??"").join(",")+"\n";
+  });
+  return "﻿"+csv;
+}
+function exportCSV(){
+  if(DB.records.length===0)return alert("내보낼 데이터가 없습니다");
+  const blob=new Blob([buildCsv()],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="피검사_이력_"+new Date().toISOString().slice(0,10)+".csv";a.click();
+}
+
+/* ===== 이력 CSV 파일 직접 연결/기록 (File System Access API) ===== */
+let csvHandle=null;
+function fsSupported(){return !!window.showOpenFilePicker;}
+function idbReq(fn){return new Promise((res,rej)=>{const o=indexedDB.open("bloodtest_fs",1);o.onupgradeneeded=()=>o.result.createObjectStore("h");o.onsuccess=()=>{try{fn(o.result,res,rej);}catch(e){rej(e);}};o.onerror=()=>rej(o.error);});}
+function idbSet(k,v){return idbReq((db,res,rej)=>{const tx=db.transaction("h","readwrite");tx.objectStore("h").put(v,k);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+function idbGet(k){return idbReq((db,res,rej)=>{const tx=db.transaction("h","readonly");const q=tx.objectStore("h").get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});}
+function setCsvState(t){const e=document.getElementById("csvLinkState");if(e)e.textContent=t;}
+
+async function linkCsv(){
+  if(!fsSupported()){
+    alert("이 실행 환경에서는 파일 직접 연결이 지원되지 않습니다.\n(파일을 더블클릭 file:// 으로 열면 안 됩니다)\n→ 'CSV 내보내기'로 저장하거나, 로컬 서버/Chrome으로 열어 주세요.");
+    return;
+  }
+  try{
+    const [h]=await window.showOpenFilePicker({types:[{description:"CSV",accept:{"text/csv":[".csv"]}}]});
+    csvHandle=h; try{await idbSet("csv",h);}catch(e){}
+    // CSV 파일 내용을 데이터 원본으로 로드(미러)
+    const f=await h.getFile(); const n=importCsvText(await f.text(),true);
+    setCsvState("📄 연결됨: "+h.name+" · "+n+"건 (이 파일이 데이터 원본)");
+    tab("dash");
+    alert("이력 CSV에 연결했습니다. ("+n+"건 불러옴)\n이제 대시보드·추이·전체데이터가 이 파일을 기준으로 표시되고,\n'저장' 시 이 파일에 새 행이 자동 추가됩니다.");
+  }catch(e){if(e.name!=="AbortError")alert("연결 실패: "+e.message);}
+}
+// 연결된 CSV 파일을 다시 읽어 화면 갱신
+async function reloadCsv(){
+  if(!csvHandle)return alert("먼저 '📄 이력 CSV 파일 연결'을 해주세요.");
+  try{
+    if((await csvHandle.queryPermission({mode:"read"}))!=="granted"){
+      if((await csvHandle.requestPermission({mode:"read"}))!=="granted")return alert("파일 읽기 권한이 필요합니다.");
+    }
+    const f=await csvHandle.getFile(); const n=importCsvText(await f.text(),true);
+    setCsvState("📄 연결됨: "+csvHandle.name+" · "+n+"건 (이 파일이 데이터 원본)");
+    tab("dash"); alert("CSV 파일에서 "+n+"건을 다시 불러왔습니다.");
+  }catch(e){alert("읽기 실패: "+e.message);}
+}
+async function writeCsv(){
+  if(!csvHandle)return "nolink";
+  try{
+    if((await csvHandle.queryPermission({mode:"readwrite"}))!=="granted"){
+      if((await csvHandle.requestPermission({mode:"readwrite"}))!=="granted")return "denied";
+    }
+    const w=await csvHandle.createWritable(); await w.write(buildCsv()); await w.close();
+    return "file";
+  }catch(e){console.warn(e);return "error";}
+}
+async function restoreCsv(){
+  try{
+    const h=await idbGet("csv");if(!h)return;csvHandle=h;
+    if((await h.queryPermission({mode:"read"}))==="granted"){
+      const f=await h.getFile(); const n=importCsvText(await f.text(),true);
+      setCsvState("📄 연결됨: "+h.name+" · "+n+"건 (이 파일이 데이터 원본)");renderDash();
+    }else{
+      setCsvState("📄 연결됨: "+h.name+" — '🔄 CSV 새로고침'을 눌러 불러오세요");
+    }
+  }catch(e){}
+}
+
+/* ===== 구글드라이브 연동 (OAuth + Drive REST) ===== */
+let gToken=null, gTokenExp=0, gTokenClient=null, driveFileId=null;
+function setDriveState(t){const e=document.getElementById("driveState");if(e)e.textContent=t;}
+function driveFileName(){return (document.getElementById("gFileName").value||"피검사_이력.csv").trim();}
+function gClientId(){return (document.getElementById("gClientId").value||"").trim();}
+function saveDriveCfg(){try{localStorage.setItem("bloodtest_drive",JSON.stringify({cid:gClientId(),fn:driveFileName(),fid:driveFileId}));}catch(e){}}
+function loadDriveCfg(){try{const c=JSON.parse(localStorage.getItem("bloodtest_drive")||"{}");if(c.cid)document.getElementById("gClientId").value=c.cid;if(c.fn)document.getElementById("gFileName").value=c.fn;if(c.fid){driveFileId=c.fid;setDriveState("☁️ 연결정보 있음 — '구글드라이브 연결' 또는 'Drive 새로고침'을 눌러 불러오세요");}}catch(e){}}
+function driveConnected(){return !!driveFileId && !!gToken && Date.now()<gTokenExp;}
+function ensureGis(){return new Promise((res,rej)=>{
+  if(window.google&&google.accounts&&google.accounts.oauth2)return res();
+  const s=document.createElement("script");s.src="https://accounts.google.com/gsi/client";s.async=true;
+  s.onload=()=>res();s.onerror=()=>rej(new Error("Google 로그인 스크립트 로드 실패(인터넷 확인)"));
+  document.head.appendChild(s);
+});}
+async function driveGetToken(){
+  await ensureGis();
+  const cid=gClientId();
+  if(!cid)throw new Error("Google 클라이언트 ID를 입력하세요");
+  if(gToken && Date.now()<gTokenExp-60000)return gToken;
+  return new Promise((res,rej)=>{
+    gTokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:cid, scope:"https://www.googleapis.com/auth/drive",
+      callback:(r)=>{ if(r&&r.error)return rej(new Error(r.error)); gToken=r.access_token; gTokenExp=Date.now()+((r.expires_in||3600)*1000); res(gToken); }
+    });
+    gTokenClient.requestAccessToken();
+  });
+}
+async function driveFetch(url,opt){
+  opt=opt||{}; opt.headers=Object.assign({},opt.headers||{},{Authorization:"Bearer "+await driveGetToken()});
+  let r=await fetch(url,opt);
+  if(r.status===401){ gToken=null; opt.headers.Authorization="Bearer "+await driveGetToken(); r=await fetch(url,opt); }
+  return r;
+}
+async function driveFind(name){
+  const q=encodeURIComponent("name='"+name.replace(/'/g,"\\'")+"' and trashed=false");
+  const r=await driveFetch("https://www.googleapis.com/drive/v3/files?q="+q+"&fields=files(id,name)&pageSize=10&spaces=drive");
+  if(!r.ok)throw new Error("드라이브 검색 실패 "+r.status);
+  const j=await r.json(); return (j.files&&j.files[0])?j.files[0].id:null;
+}
+async function driveReadId(id){
+  const r=await driveFetch("https://www.googleapis.com/drive/v3/files/"+id+"?alt=media");
+  if(!r.ok)throw new Error("드라이브 읽기 실패 "+r.status); return await r.text();
+}
+async function driveWriteId(id){
+  const r=await driveFetch("https://www.googleapis.com/upload/drive/v3/files/"+id+"?uploadType=media",
+    {method:"PATCH",headers:{"Content-Type":"text/csv"},body:buildCsv()});
+  if(!r.ok)throw new Error("드라이브 쓰기 실패 "+r.status);
+}
+async function driveCreate(name){
+  const r=await driveFetch("https://www.googleapis.com/drive/v3/files?fields=id",
+    {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,mimeType:"text/csv"})});
+  if(!r.ok)throw new Error("드라이브 생성 실패 "+r.status);
+  const j=await r.json(); await driveWriteId(j.id); return j.id;
+}
+async function driveConnect(){
+  setDriveState("구글 로그인 중…");
+  try{
+    await driveGetToken();
+    const name=driveFileName();
+    setDriveState("드라이브에서 '"+name+"' 찾는 중…");
+    let id=await driveFind(name);
+    if(!id){
+      if(!confirm("드라이브에 '"+name+"' 파일이 없습니다. 새로 만들까요?")){setDriveState("미연결");return;}
+      id=await driveCreate(name);
+    }
+    driveFileId=id; saveDriveCfg();
+    const n=importCsvText(await driveReadId(id),true);
+    setDriveState("☁️ 연결됨: "+name+" · "+n+"건 (드라이브가 데이터 원본)");
+    tab("dash");
+    alert("구글드라이브 CSV에 연결했습니다. ("+n+"건)\n저장 시 이 드라이브 파일이 자동 갱신됩니다.");
+  }catch(e){setDriveState("연결 실패: "+e.message);alert("드라이브 연결 실패: "+e.message);}
+}
+async function driveReload(){
+  if(!driveFileId)return alert("먼저 '구글드라이브 연결'을 해주세요.");
+  try{
+    const n=importCsvText(await driveReadId(driveFileId),true);
+    setDriveState("☁️ 연결됨: "+driveFileName()+" · "+n+"건");
+    tab("dash"); alert("드라이브에서 "+n+"건을 불러왔습니다.");
+  }catch(e){alert("Drive 새로고침 실패: "+e.message);}
+}
+async function driveWrite(){
+  if(!driveFileId)return "nolink";
+  try{ await driveWriteId(driveFileId); return "drive"; }catch(e){console.warn(e);return "error";}
+}
+function importCsvText(text,replace){
+  try{
+    text=(text||"").replace(/^﻿/,"");
+    const lines=text.split(/\r?\n/).filter(l=>l.trim());
+    if(!lines.length){if(replace){DB.records=[];save();}return 0;}
+    if(replace)DB.records=[];   // CSV 파일을 데이터 원본으로 그대로 반영(미러)
+    const header=lines[0].split(",").map(s=>s.trim());
+    const hasInst=header[1]==="검사기관";   // 신규: 검사일,검사기관,메모,… / 구형식: 검사일,구분,…
+    const base=hasInst?3:2;
+    const keys=header.slice(base);
+    let added=0;
+    for(let i=1;i<lines.length;i++){
+      const cols=lines[i].split(",");
+      const date=cols[0]?.trim();if(!date)continue;
+      const inst=hasInst?(cols[1]?.trim()||""):"";
+      const note=hasInst?(cols[2]?.trim()||""):(cols[1]?.trim()||"");
+      const vals={};
+      keys.forEach((k,j)=>{const v=cols[j+base]?.trim();if(v!==""&&v!=null&&!isNaN(v))vals[k]=parseFloat(v)});
+      keys.forEach(k=>{if(!refOf(k))DB.customRefs.push({k,unit:"",low:0,high:999,custom:true})});
+      if(!DB.records.some(r=>r.date===date&&(r.inst||"")===inst)){DB.records.push({date,inst,note,vals,files:[]});added++;}
+    }
+    DB.records.sort((a,b)=>a.date.localeCompare(b.date));save();
+    buildEntryForm();renderDash();
+    return added;
+  }catch(err){alert("CSV 형식을 확인하세요: "+err.message);return 0;}
+}
+function importCSV(e){
+  const f=e.target.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const added=importCsvText(rd.result);
+    alert(added+"개 기록을 가져왔습니다");tab("dash");
+    e.target.value="";
+  };
+  rd.readAsText(f,"utf-8");
+}
+
+/* ===== 자동 인식 (OCR) ===== */
+if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}
+
+/* 검사지 라벨(영문) → 앱 항목(한글) 매핑. [항목키, 라벨패턴]
+   값은 라벨 뒤 같은 줄 우선, 없으면 바로 다음 줄까지 허용해 추출(OCR 줄바꿈 대응) */
+const NUM="(-?\\d+(?:\\.\\d+)?)";
+const OCRMAP=[
+ ["HbA1c", "HbA1c"],
+ ["WBC", "WBC(?:\\s*Count)?"],
+ ["RBC", "RBC(?:\\s*Count)?"],
+ ["Hemoglobin", "Hemoglobin"],
+ ["Hematocrit", "Hematocrit"],
+ ["Platelet", "Platelet"],
+ ["호중구%", "neutrophil[s]?"],
+ ["림프구%", "Lymphocyte[s]?"],
+ ["단핵구%", "Monocyte[s]?"],
+ ["호산구%", "Eosinophil[s]?"],
+ ["호염기구%", "Basophil[s]?"],
+ ["ANC", "ANC"],
+ ["MCV", "MCV"],
+ ["MCHC", "MCHC"],
+ ["MCH", "MCH(?!C)"],
+ ["TSH수용체항체(TSI)", "TSH\\s*Receptor\\s*Ab"],
+ ["Glucose(공복혈당)", "Glucose"],
+ ["Total Protein", "Total\\s*Protein"],
+ ["Albumin", "Albumin"],
+ ["Globulin", "Globulin"],
+ ["A/G Ratio", "A\\s*/\\s*G\\s*Ratio"],
+ ["BUN(요소질소)", "(?:Urea\\s*Nitrogen|BUN)"],
+ ["Creatinine", "Creatinine"],
+ ["eGFR(MDRD)", "MDRD[-\\s]?eGFR"],
+ ["eGFR(CKD-EPI)", "eGFR\\s*\\(\\s*CKD[-\\s]?EPI\\)(?:[^\\n\\d]*\\([^)]*\\))*"],
+ ["AST(GOT)", "AST"],
+ ["ALT(GPT)", "ALT"],
+ ["Total Bilirubin", "Total\\s*Bilirubin"],
+ ["γ-GTP", "(?:[γyrY]\\s*-?\\s*GTP|GGT)"],
+ ["Uric acid(요산)", "Uric\\s*acid"],
+ ["Calcium", "Calcium"],
+ ["Phosphorus", "Phosphorus"],
+ ["Sodium", "Sodium"],
+ ["Potassium", "Potassium"],
+ ["Magnesium", "Magnesium"],
+ ["CRF(심혈관위험)", "(?:CRF|Cardiac\\s*Risk)"],
+ ["Total Cholesterol", "Total\\s*Cholesterol"],
+ ["Triglyceride", "Triglyceride[s]?"],
+ ["HDL-Cholesterol", "HDL[- ]*Cholesterol"],
+ ["LDL-Cholesterol", "LDL[- ]*Cholesterol"],
+ ["Vitamin D 25(OH)", "Vitamin\\s*D"],
+ ["CRP", "CRP"],
+ ["TSI Bioassay(%)", "TSI\\s*Bioassay"],
+ ["TSH", "TSH(?!\\s*Receptor)"],
+ ["Free T4", "Free\\s*T4"],
+ ["T3", "\\bT3\\b"],
+];
+const SAME="[^\\n\\d]*?"+NUM;     // 같은 줄
+const NEXT="[^\\d]{0,18}?"+NUM;   // 다음 줄까지 허용
+
+function parseLab(text){
+  const out={};
+  OCRMAP.forEach(([key,core])=>{
+    const m=text.match(new RegExp(core+SAME,"i"));     // 같은 줄에서만 추출(오인식 최소화)
+    if(m){const v=parseFloat(m[1]);if(!isNaN(v))out[key]=v;}
+  });
+  // 검사일(채취일) 추출 — 채취일 > 처방일 > 진료기간 > 본문 첫 날짜 순
+  const DATE="(20\\d{2}\\s?[-.\\/]\\s?\\d{1,2}\\s?[-.\\/]\\s?\\d{1,2})";
+  const pick=lbl=>{const m=text.match(new RegExp(lbl+"[^0-9]{0,8}"+DATE));return m?m[2]||m[1]:null;};
+  let dstr=pick("채취일[시]?")||pick("처방일[자]?")||pick("진료기간")||(text.match(new RegExp(DATE))||[])[0];
+  if(dstr)out.__date=dstr.replace(/\s/g,"").replace(/[.\/]/g,"-").replace(/-(\d)(?=-|$)/g,"-0$1").replace(/^(\d{4})-(\d)-/,"$1-0$2-");
+  // 검사기관(병원명) 추출
+  const inst=text.match(/([가-힣A-Za-z][가-힣A-Za-z0-9·().\s]{1,22}?(?:대학교\s*)?(?:[가-힣]{1,10})?(?:병원|의원|의료원|클리닉|검진센터|건강검진센터|메디컬센터))/);
+  if(inst)out.__inst=inst[1].replace(/\s+/g," ").trim();
+  return out;
+}
+
+function setOcrStatus(t){document.getElementById("ocrStatus").textContent=t;}
+function setBar(p){const b=document.getElementById("ocrBar");b.style.display=p>0?"block":"none";b.querySelector("i").style.width=Math.round(p*100)+"%";}
+
+async function ocrFiles(e){const fs=[...e.target.files];e.target.value="";for(const f of fs)await handleOcrFile(f);}
+
+async function handleOcrFile(file){
+  const isPdf=file.type==="application/pdf"||/\.pdf$/i.test(file.name);
+  setOcrStatus("'"+file.name+"' 처리 중…");setBar(0.05);
+  // 이미지면 미리 dataURL 확보(HEIC 변환 포함) + 첨부 보관
+  let url=null;
+  if(!isPdf){
+    try{url=await fileToImageURL(file);
+      pendingFiles.push({name:file.name.replace(/\.he?ic$|\.heif$/i,".jpg"),type:"image/jpeg",data:url});renderThumbs();
+    }catch(err){setBar(0);setOcrStatus("");document.getElementById("ocrResult").innerHTML=
+      `<div class="alert bad">파일을 열 수 없습니다: ${err.message}</div>`;return;}
+  }
+  // 1) Claude API 판독 우선
+  OCR_ERR="";
+  if(apiEnabled()){
+    try{
+      setOcrStatus("Claude API 판독 중…");setBar(0.35);
+      const ext=await readWithAPI(file,isPdf,url);
+      OCR_SRC="🤖 Claude API 판독";
+      setBar(1);applyExtracted(ext);setBar(0);return;
+    }catch(err){OCR_ERR=err.message;setOcrStatus("API 판독 실패 — 로컬 OCR로 전환");}
+  }
+  // 2) 로컬 OCR (무료)
+  OCR_SRC=apiEnabled()?"로컬 OCR(API 실패로 전환)":"로컬 OCR(무료)";
+  let text="";
+  try{ text = isPdf ? await ocrPdf(file) : await ocrImage(url); }
+  catch(err){setBar(0);setOcrStatus("");document.getElementById("ocrResult").innerHTML=
+    `<div class="alert bad">자동 인식 실패: ${err.message}. 값을 직접 입력하거나 사진을 채팅에 올려 판독받으세요.</div>`;return;}
+  setBar(1);setOcrStatus("인식 완료 — 항목 분석 중…");
+  applyExtracted(parseLab(text));
+  setBar(0);
+}
+let OCR_SRC="", OCR_ERR="";
+function srcLine(){
+  let h="";
+  if(OCR_SRC)h+=`<div class="small" style="margin-bottom:4px"><span class="pill ${OCR_SRC.includes("API 판독")?"ok":"na"}">${OCR_SRC}</span></div>`;
+  if(OCR_ERR)h+=`<div class="alert bad small" style="margin-bottom:6px"><b>API 호출 실패:</b> ${OCR_ERR}<br>→ 아래는 무료 로컬 OCR 결과입니다. <b>'API 연결 테스트'</b> 버튼으로 원인을 확인하세요(file://이면 로컬 서버로 열어야 합니다).</div>`;
+  return h;
+}
+// API 연결/모델/키 진단
+async function testApi(){
+  const key=getApiKey();
+  const rb=document.getElementById("ocrResult");
+  if(!key){rb.innerHTML=`<div class="alert bad">먼저 API 키를 입력하세요.</div>`;return;}
+  const model=document.getElementById("apiModel").value;
+  const diag=`입력한 키: <code>${key.slice(0,12)}…</code> (${key.length}자, ${key.startsWith("sk-ant-")?"sk-ant- 형식 ✓":"⚠ sk-ant- 로 시작 안 함"})`;
+  rb.innerHTML=`<div class="alert">API 연결 테스트 중… (${model})</div>`;
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+      headers:{"x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true","content-type":"application/json"},
+      body:JSON.stringify({model,max_tokens:16,messages:[{role:"user",content:"reply with: OK"}]})});
+    if(!r.ok){let e="";try{e=(await r.json()).error?.message||"";}catch(_){}
+      rb.innerHTML=`<div class="alert bad"><b>API 오류 HTTP ${r.status}</b><div class="small">${e||"(상세 없음)"}</div>
+        <div class="small" style="margin-top:4px">${diag}</div>
+        <div class="small muted">401·403=키 무효/권한 → 키를 끝까지 정확히 복사했는지, 폐기되지 않았는지 확인 · 404=모델명 미지원 · 429=한도/크레딧</div></div>`;return;}
+    const j=await r.json();const t=(j.content||[]).map(c=>c.text||"").join("");
+    rb.innerHTML=`<div class="alert ok"><b>✅ API 연결 성공</b> · 모델 ${j.model||model} · 응답 "${t.slice(0,24)}"<div class="small muted">이제 검사지를 올리면 Claude API로 판독합니다.</div></div>`;
+  }catch(err){
+    rb.innerHTML=`<div class="alert bad"><b>연결 실패(네트워크/CORS 차단)</b><div class="small">${err.message}</div>
+      <div class="small muted">원인 대부분: 파일을 더블클릭(file://)으로 열면 브라우저가 외부 API 호출을 막습니다. <b>로컬 서버(http://localhost)로 열면 해결</b>됩니다 — 방법은 채팅으로 문의하세요.</div></div>`;
+  }
+}
+
+/* ===== Claude API 판독 ===== */
+function getApiKey(){return (document.getElementById("apiKey").value||"").replace(/\s/g,"");} // 공백·줄바꿈 제거
+function toggleKey(){const i=document.getElementById("apiKey");i.type=i.type==="password"?"text":"password";}
+function apiEnabled(){const o=document.getElementById("apiOn");return o&&o.checked&&getApiKey();}
+function saveApiCfg(){try{localStorage.setItem("bloodtest_api",JSON.stringify({on:document.getElementById("apiOn").checked,key:document.getElementById("apiKey").value,model:document.getElementById("apiModel").value}));}catch(e){}}
+function loadApiCfg(){try{const c=JSON.parse(localStorage.getItem("bloodtest_api")||"{}");if(c.on)document.getElementById("apiOn").checked=true;if(c.key)document.getElementById("apiKey").value=c.key;if(c.model)document.getElementById("apiModel").value=c.model;}catch(e){}}
+function apiPrompt(){
+  const keys=REF.map(r=>r.k).join(", ");
+  return "다음 혈액검사 결과지 이미지에서 각 검사 항목의 '결과값'을 추출해 JSON만 출력하세요.\n"+
+    '출력형식: {"검사일":"YYYY-MM-DD","검사기관":"병원명","values":{"항목키":숫자}}\n'+
+    "규칙:\n- 검사일은 '채취일시'를 우선 사용(없으면 처방일자/진료기간).\n"+
+    "- 검사기관은 상단 병원명(예: 가톨릭대학교 은평성모병원).\n"+
+    "- values의 키는 아래 목록과 정확히 같게 쓰세요. 목록에 없는 항목은 검사지 명칭을 그대로 키로.\n"+
+    "- 값은 숫자만. 화살표(▲▼)·부등호·'이하'·단위 제외. 예: 'TSH 0.01 이하'→0.01, '5.69▲'→5.69.\n"+
+    "- 참고치(정상범위)가 아니라 결과값만. 여러 페이지면 합쳐 하나로.\n"+
+    "항목 목록: "+keys+"\nJSON 외 텍스트·설명·코드펜스 없이 JSON만 출력.";
+}
+async function downscaleToBase64(url,maxDim){
+  const img=await loadImg(url);const s=Math.min(1,(maxDim||1568)/Math.max(img.width,img.height));
+  const c=document.createElement("canvas");c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);
+  c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+  return c.toDataURL("image/jpeg",0.9).split(",")[1];
+}
+async function pdfToBase64(file,maxDim){
+  const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;const out=[];
+  for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);
+    const v0=page.getViewport({scale:1});const s=Math.min(2,(maxDim||1568)/Math.max(v0.width,v0.height));
+    const vp=page.getViewport({scale:s});const c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;
+    await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+    out.push(c.toDataURL("image/jpeg",0.9).split(",")[1]);}
+  return out;
+}
+async function readWithAPI(file,isPdf,url){
+  const key=getApiKey(), model=document.getElementById("apiModel").value;
+  const imgs = isPdf ? await pdfToBase64(file) : [await downscaleToBase64(url)];
+  const content=imgs.map(b=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b}}));
+  content.push({type:"text",text:apiPrompt()});
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+    headers:{"x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true","content-type":"application/json"},
+    body:JSON.stringify({model,max_tokens:2000,messages:[{role:"user",content}]})});
+  if(!r.ok){let e="";try{e=(await r.json()).error?.message||"";}catch(_){}throw new Error("HTTP "+r.status+(e?" · "+e.slice(0,120):""));}
+  const j=await r.json();
+  const txt=(j.content||[]).map(c=>c.text||"").join("");
+  let data; try{data=JSON.parse(txt.replace(/```json|```/gi,"").trim());}catch(e){throw new Error("응답 JSON 파싱 실패");}
+  const ext={}, vals=data.values||data;
+  Object.entries(vals).forEach(([k,v])=>{if(k==="검사일"||k==="검사기관")return;const n=parseFloat(v);if(!isNaN(n))ext[k]=n;});
+  const d=data.검사일||data.date; if(d)ext.__date=String(d).slice(0,10);
+  const ins=data.검사기관||data.institution; if(ins&&String(ins).trim())ext.__inst=String(ins).trim();
+  return ext;
+}
+
+function blobToDataURL(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(blob);});}
+// 이미지 파일을 dataURL로. HEIC/HEIF는 브라우저가 못 읽으므로 heic2any로 JPEG 변환 후 반환
+async function fileToImageURL(file){
+  const isHeic=/\.he?ic$|\.heif$/i.test(file.name)||/heic|heif/i.test(file.type||"");
+  if(isHeic){
+    setOcrStatus("HEIC 변환 중… (시간이 다소 걸릴 수 있습니다)");
+    if(typeof heic2any==="undefined")throw new Error("HEIC 변환 모듈을 불러오지 못했습니다(인터넷 연결 확인)");
+    const out=await heic2any({blob:file,toType:"image/jpeg",quality:0.92});
+    const jpg=Array.isArray(out)?out[0]:out;
+    return await blobToDataURL(jpg);
+  }
+  return await blobToDataURL(file);
+}
+
+function loadImg(url){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(new Error("이미지를 열 수 없습니다"));im.src=url;});}
+// 이미지를 지정 각도로 회전 + 흑백·대비 강화 전처리한 캔버스 반환 (흐린 사진 인식률↑)
+function toCanvas(img,deg,scale){
+  const w=img.width*scale, h=img.height*scale, flip=(deg%180!==0);
+  const c=document.createElement("canvas");
+  c.width=flip?h:w; c.height=flip?w:h;
+  const ctx=c.getContext("2d");
+  ctx.fillStyle="#fff";ctx.fillRect(0,0,c.width,c.height);
+  ctx.translate(c.width/2,c.height/2);
+  ctx.rotate(deg*Math.PI/180);
+  ctx.drawImage(img,-w/2,-h/2,w,h);
+  // 전처리: 그레이스케일 + 분위수(2%) 오토콘트라스트 + 완만한 대비 (과한 대비는 표선과 숫자를 붙여 읽음)
+  try{
+    const id=ctx.getImageData(0,0,c.width,c.height), d=id.data, N=d.length/4, hist=new Array(256).fill(0);
+    for(let i=0;i<d.length;i+=4){const g=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0;d[i]=g;hist[g]++;}
+    const cut=N*0.02; let lo=0,hi=255,acc=0;
+    for(let v=0;v<256;v++){acc+=hist[v];if(acc>cut){lo=v;break;}}
+    acc=0;for(let v=255;v>=0;v--){acc+=hist[v];if(acc>cut){hi=v;break;}}
+    const rng=Math.max(1,hi-lo), K=1.5, B=128*(1-1.5);
+    for(let i=0;i<d.length;i+=4){
+      let g=(d[i]-lo)/rng*255; g=g<0?0:g>255?255:g;
+      g=g*K+B; g=g<0?0:g>255?255:g;
+      d[i]=d[i+1]=d[i+2]=g;
+    }
+    ctx.putImageData(id,0,0);
+  }catch(e){/* CORS 등으로 픽셀 접근 불가시 원본 사용 */}
+  return c;
+}
+// 인식 텍스트에서 검사 항목 라벨이 몇 개 잡히는지 = 방향 점수
+function scoreText(t){let n=0;OCRMAP.forEach(([k,core])=>{if(new RegExp(core,"i").test(t))n++});return n;}
+
+// 0/90/180/270°를 시도해 가장 잘 읽힌 방향을 자동 채택 (거꾸로·옆으로 찍은 사진 보정)
+async function ocrImage(url){
+  const img=await loadImg(url);
+  const scale=Math.min(1,2800/Math.max(img.width,img.height));
+  // 1) 값(숫자) 인식: 영문 전용 — 한글 모델을 섞으면 숫자 인식이 오히려 떨어짐
+  const worker=await Tesseract.createWorker("eng",1);
+  try{await worker.setParameters({tessedit_pageseg_mode:"6"});}catch(e){} // 단일 블록(표) 모드
+  let best={n:-1,text:"",deg:0};
+  const angles=[0,90,180,270];
+  try{
+    for(let i=0;i<angles.length;i++){
+      setOcrStatus(angles[i]===0?"글자 인식 중…":`방향 보정 시도 중… (${angles[i]}° 회전)`);
+      const {data:{text}}=await worker.recognize(toCanvas(img,angles[i],scale));
+      const n=scoreText(text);
+      if(n>best.n)best={n,text,deg:angles[i]};
+      setBar(0.15+0.6*(i+1)/angles.length);
+      if(angles[i]===0 && n>=6)break;        // 똑바로 찍혀 잘 읽히면 회전 생략
+    }
+  }finally{await worker.terminate();}
+  // 2) 한글 검사기관·날짜 보강: 최적 방향에서 1회만 eng+kor
+  let kor="";
+  try{
+    setOcrStatus("검사기관·날짜 인식 중…");
+    const kw=await Tesseract.createWorker(["eng","kor"],1);
+    try{await kw.setParameters({tessedit_pageseg_mode:"6"});}catch(e){}
+    const {data:{text}}=await kw.recognize(toCanvas(img,best.deg,scale));
+    kor=text; await kw.terminate();
+  }catch(e){/* kor 실패시 값만 사용 */}
+  setBar(0.95);
+  if(best.deg)setOcrStatus(`방향 보정 적용: ${best.deg}° 회전`);
+  return best.text+"\n"+kor;   // 값은 영문 텍스트에서, 기관/날짜는 한글 텍스트에서 파싱
+}
+
+async function ocrPdf(file){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let all="";
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    // 1) 텍스트 PDF면 바로 추출
+    const tc=await page.getTextContent();
+    const txt=tc.items.map(i=>i.str).join(" ");
+    if(txt.replace(/\s/g,"").length>40){all+="\n"+txt;setBar(0.1+0.8*p/pdf.numPages);continue;}
+    // 2) 스캔 PDF면 렌더 후 OCR
+    const vp=page.getViewport({scale:2});
+    const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;
+    await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;
+    const url=cv.toDataURL("image/png");
+    all+="\n"+await ocrImage(url);
+    setBar(0.1+0.8*p/pdf.numPages);
+  }
+  return all;
+}
+
+function applyExtracted(ext){
+  const newKeys=Object.keys(ext).filter(k=>!k.startsWith("__"));
+  const newCount=newKeys.length;
+  // 1) 폼을 다시 그리기 전에, 현재 채워진 값/검사일/검사기관을 스냅샷 (이전 파일 인식분 보존)
+  const snap={};
+  document.querySelectorAll('#entryFields input[data-k]').forEach(inp=>{if(inp.value!=="")snap[inp.dataset.k]=inp.value;});
+  const di=document.getElementById("entryDate"), ii=document.getElementById("entryInst");
+  const snapDate=di?di.value:"", snapInst=ii?ii.value:"";
+  // 2) 신규 항목은 커스텀으로 등록 후 폼 재생성
+  newKeys.forEach(k=>{if(!refOf(k))DB.customRefs.push({k,unit:"",low:0,high:999,custom:true});});
+  if(newCount)save();
+  buildEntryForm();
+  // 3) 스냅샷 복원 + 이번 파일 인식분 덮어쓰기 (누적)
+  const merged=Object.assign({},snap);
+  newKeys.forEach(k=>merged[k]=ext[k]);
+  let total=0;
+  document.querySelectorAll('#entryFields input[data-k]').forEach(inp=>{
+    const k=inp.dataset.k;
+    if(merged[k]!=null && merged[k]!==""){inp.value=merged[k];inp.classList.add("auto");total++;}
+  });
+  // 검사일·검사기관: 이번 파일 인식값 우선, 없으면 이전 값 유지 (buildEntryForm의 오늘날짜 기본값 덮어씀)
+  const newDate=ext.__date||snapDate;
+  const newInst=ext.__inst||snapInst;
+  if(di){di.value=newDate; if(newDate)di.classList.add("auto");}
+  if(ii){ii.value=newInst; if(newInst)ii.classList.add("auto");}
+  // 4) 결과 표시 (현재까지 누적된 전체 상태 기준)
+  if(newCount===0 && !ext.__date && !ext.__inst && total===0){
+    document.getElementById("ocrResult").innerHTML=srcLine()+`<div class="alert warn"><b>인식된 검사 항목이 없습니다.</b><div class="small" style="margin-top:4px">사진이 흐리거나 여백이 많으면 인식이 어렵습니다. ① 검사지를 화면 가득, 평평하게, 밝은 곳에서 다시 찍거나 ② 값을 직접 입력하거나 ③ <b>Claude 채팅에 사진을 올리면 정확히 판독</b>해 CSV로 만들어 드립니다(가져오기로 누적).</div></div>`;
+    setOcrStatus("");return;
+  }
+  const meta=[newDate?"검사일 "+newDate:"",newInst?"검사기관 "+newInst:""].filter(Boolean).join(" · ");
+  const list=Object.keys(merged).map(k=>`${k} <b>${merged[k]}</b> <span class="pill ${status(k,merged[k])}">${PILL[status(k,merged[k])]}</span>`).join(" · ");
+  document.getElementById("ocrResult").innerHTML=srcLine()+
+    `<div class="alert ok"><b>이번 파일 ${newCount}개 인식 · 누적 ${total}개 입력됨</b>${meta?" · "+meta:""}
+       <div class="small" style="margin-top:6px">${list}</div></div>
+     <div class="small muted">여러 장이면 계속 올리면 누적됩니다. 모두 올린 뒤 값·검사일·검사기관을 확인하고 <b>저장</b>하세요.</div>`;
+  setOcrStatus("");
+}
+
+/* OCR 영역 드래그&드롭 */
+const oz=document.getElementById("ocrzone");
+["dragover","dragenter"].forEach(ev=>oz.addEventListener(ev,e=>{e.preventDefault();oz.classList.add("drag")}));
+["dragleave"].forEach(ev=>oz.addEventListener(ev,e=>{e.preventDefault();oz.classList.remove("drag")}));
+oz.addEventListener("drop",async e=>{e.preventDefault();oz.classList.remove("drag");for(const f of e.dataTransfer.files)await handleOcrFile(f);});
+
+/* 항목명 클릭 → 설명 팝업 (이벤트 위임) */
+document.addEventListener("click",e=>{const t=e.target.closest("[data-info]");if(t)showInfo(t.getAttribute("data-info"));});
+
+/* init */
+loadApiCfg();
+loadDriveCfg();
+restoreCsv();
+buildEntryForm();
+renderDash();
+</script>
+</body>
+</html>
