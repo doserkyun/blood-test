@@ -440,18 +440,11 @@ async function saveEntry(){
   DB.records.push({date,inst:document.getElementById("entryInst").value.trim(),note:document.getElementById("entryNote").value.trim(),vals,files:pendingFiles});
   DB.records.sort((a,b)=>a.date.localeCompare(b.date));
   save();pendingFiles=[];resetEntry();
-  // 저장 대상: 구글드라이브 연결 우선 → 로컬 파일 → 없으면 안내
+  // 연결된 모든 곳(드라이브+로컬)에 동시 기록 = 양방향 동기화
+  const synced=await syncAll();
   let msg="이력에 추가하고 분석을 갱신했습니다.";
-  if(driveFileId){
-    const d=await driveWrite();
-    if(d==="drive")msg+="\n☁️ 구글드라이브 파일도 업데이트했습니다.";
-    else msg+="\n⚠ 드라이브 쓰기 실패. 'Drive 새로고침' 후 다시 시도하거나 'CSV 내보내기'로 저장하세요.";
-  }else{
-    const w=await writeCsv();
-    if(w==="file")msg+="\n📄 로컬 CSV 파일도 업데이트했습니다.";
-    else if(w==="nolink")msg+="\n(드라이브 또는 로컬 CSV에 자동 기록하려면 위에서 한 번 연결해 두세요. 또는 'CSV 내보내기' 사용.)";
-    else if(w==="denied"||w==="error")msg+="\n⚠ CSV 파일 쓰기 실패. 'CSV 내보내기'로 저장하세요.";
-  }
+  if(synced.length)msg+="\n"+synced.join(", ")+" 파일도 업데이트했습니다.";
+  else msg+="\n(드라이브/로컬 CSV를 연결하면 자동 저장됩니다. 또는 'CSV 내보내기' 사용.)";
   alert(msg);tab("dash");
 }
 
@@ -588,11 +581,12 @@ async function linkCsv(){
   try{
     const [h]=await window.showOpenFilePicker({types:[{description:"CSV",accept:{"text/csv":[".csv"]}}]});
     csvHandle=h; try{await idbSet("csv",h);}catch(e){}
-    // CSV 파일 내용을 데이터 원본으로 로드(미러)
-    const f=await h.getFile(); const n=importCsvText(await f.text(),true);
-    setCsvState("📄 연결됨: "+h.name+" · "+n+"건 (이 파일이 데이터 원본)");
+    // 로컬 파일 내용을 현재 데이터와 합침(merge) 후, 합쳐진 전체를 모든 연결처에 반영
+    const f=await h.getFile(); importCsvText(await f.text(),false);
+    const synced=await syncAll();
+    setCsvState("📄 연결됨: "+h.name+" · "+DB.records.length+"건");
     tab("dash");
-    alert("이력 CSV에 연결했습니다. ("+n+"건 불러옴)\n이제 대시보드·추이·전체데이터가 이 파일을 기준으로 표시되고,\n'저장' 시 이 파일에 새 행이 자동 추가됩니다.");
+    alert("로컬 CSV 연결 완료. 데이터를 합쳐 총 "+DB.records.length+"건으로 동기화했습니다."+(synced.length?"\n동기화: "+synced.join(", "):""));
   }catch(e){if(e.name!=="AbortError")alert("연결 실패: "+e.message);}
 }
 // 연결된 CSV 파일을 다시 읽어 화면 갱신
@@ -602,9 +596,10 @@ async function reloadCsv(){
     if((await csvHandle.queryPermission({mode:"read"}))!=="granted"){
       if((await csvHandle.requestPermission({mode:"read"}))!=="granted")return alert("파일 읽기 권한이 필요합니다.");
     }
-    const f=await csvHandle.getFile(); const n=importCsvText(await f.text(),true);
-    setCsvState("📄 연결됨: "+csvHandle.name+" · "+n+"건 (이 파일이 데이터 원본)");
-    tab("dash"); alert("CSV 파일에서 "+n+"건을 다시 불러왔습니다.");
+    const f=await csvHandle.getFile(); importCsvText(await f.text(),true);
+    await syncAll();   // 다른 연결처(드라이브)에도 반영
+    setCsvState("📄 연결됨: "+csvHandle.name+" · "+DB.records.length+"건");
+    tab("dash"); alert("로컬 CSV에서 "+DB.records.length+"건을 불러와 동기화했습니다.");
   }catch(e){alert("읽기 실패: "+e.message);}
 }
 async function writeCsv(){
@@ -695,23 +690,32 @@ async function driveConnect(){
       id=await driveCreate(name);
     }
     driveFileId=id; saveDriveCfg();
-    const n=importCsvText(await driveReadId(id),true);
-    setDriveState("☁️ 연결됨: "+name+" · "+n+"건 (드라이브가 데이터 원본)");
+    importCsvText(await driveReadId(id),false);   // 드라이브 내용을 현재 데이터와 합침(merge)
+    const synced=await syncAll();                  // 합쳐진 전체를 드라이브·로컬에 모두 반영
+    setDriveState("☁️ 연결됨: "+name+" · "+DB.records.length+"건");
     tab("dash");
-    alert("구글드라이브 CSV에 연결했습니다. ("+n+"건)\n저장 시 이 드라이브 파일이 자동 갱신됩니다.");
+    alert("구글드라이브 연결 완료. 로컬과 드라이브 데이터를 합쳐 총 "+DB.records.length+"건으로 동기화했습니다."+(synced.length?"\n동기화: "+synced.join(", "):""));
   }catch(e){setDriveState("연결 실패: "+e.message);alert("드라이브 연결 실패: "+e.message);}
 }
 async function driveReload(){
   if(!driveFileId)return alert("먼저 '구글드라이브 연결'을 해주세요.");
   try{
-    const n=importCsvText(await driveReadId(driveFileId),true);
-    setDriveState("☁️ 연결됨: "+driveFileName()+" · "+n+"건");
-    tab("dash"); alert("드라이브에서 "+n+"건을 불러왔습니다.");
+    importCsvText(await driveReadId(driveFileId),true);
+    await syncAll();   // 다른 연결처(로컬)에도 반영
+    setDriveState("☁️ 연결됨: "+driveFileName()+" · "+DB.records.length+"건");
+    tab("dash"); alert("드라이브에서 "+DB.records.length+"건을 불러와 동기화했습니다.");
   }catch(e){alert("Drive 새로고침 실패: "+e.message);}
 }
 async function driveWrite(){
   if(!driveFileId)return "nolink";
   try{ await driveWriteId(driveFileId); return "drive"; }catch(e){console.warn(e);return "error";}
+}
+/* 현재 데이터(DB)를 연결된 모든 곳(드라이브·로컬)에 기록 = 양방향 동기화 */
+async function syncAll(){
+  const done=[];
+  if(driveFileId){try{await driveWriteId(driveFileId);done.push("☁️드라이브");}catch(e){console.warn(e);}}
+  if(csvHandle){const w=await writeCsv();if(w==="file")done.push("📄로컬");}
+  return done;
 }
 function importCsvText(text,replace){
   try{
