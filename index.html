@@ -86,7 +86,35 @@
   .bar{height:8px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:10px}
   .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
   .auto{outline:2px solid var(--accent);background:rgba(79,140,255,.1)!important}
-  @media(max-width:560px){.entryrow{grid-template-columns:1fr 1fr}}
+  @media(max-width:600px){
+    body{font-size:15px}
+    .wrap{padding:14px}
+    header{padding:14px 16px}
+    header h1{font-size:18px}
+    header .sub{font-size:12px}
+    .card{padding:14px;border-radius:12px}
+    .card h2{font-size:15px}
+    .tabs{gap:5px}
+    .tab{padding:9px 10px;font-size:13px;flex:1 1 auto;text-align:center}
+    .row{gap:8px}
+    /* 설정/입력의 input·select는 모바일에서 한 줄씩 가득 차게 */
+    .row input,.row select{flex:1 1 100%;min-width:0;width:100%}
+    /* 검사 항목 입력: 제목은 윗줄 전체, 아래에 값+참고범위 */
+    .entryrow{grid-template-columns:1fr 96px;gap:4px 10px;margin-bottom:12px}
+    .entryrow>div:nth-child(1){grid-column:1 / 3;font-weight:600}
+    .entryrow .ref{font-size:10px}
+    .entryrow>div:nth-child(4){display:none}
+    .summary{grid-template-columns:repeat(3,1fr);gap:8px}
+    .stat{padding:10px}
+    .stat .n{font-size:22px}
+    .grid{grid-template-columns:1fr}
+    th,td{padding:7px 6px;font-size:12px}
+    .modalcard{padding:18px}
+    .modalcard h2{font-size:16px}
+    .ocrzone{padding:18px}
+    .ocrzone .big{font-size:14px}
+    .btn{padding:10px 14px}
+  }
 </style>
 </head>
 <body>
@@ -663,7 +691,8 @@ async function driveGetToken(){
   });
 }
 async function driveFetch(url,opt){
-  opt=opt||{}; opt.headers=Object.assign({},opt.headers||{},{Authorization:"Bearer "+await driveGetToken()});
+  opt=opt||{}; opt.cache="no-store";   // 캐시된 옛 버전이 아니라 항상 최신을 가져옴
+  opt.headers=Object.assign({},opt.headers||{},{Authorization:"Bearer "+await driveGetToken()});
   let r=await fetch(url,opt);
   if(r.status===401){ gToken=null; opt.headers.Authorization="Bearer "+await driveGetToken(); r=await fetch(url,opt); }
   return r;
@@ -715,10 +744,11 @@ async function driveConnect(){
 async function driveReload(){
   if(!driveFileId)return alert("먼저 '구글드라이브 연결'을 해주세요.");
   try{
-    importCsvText(await driveReadId(driveFileId),true);
-    await syncAll();   // 다른 연결처(로컬)에도 반영
+    // 읽기 전용: 드라이브 → 앱 (다시 쓰지 않음 → 덮어쓰기로 인한 행 삭제 방지)
+    const txt=await driveReadId(driveFileId);
+    importCsvText(txt,true);
     setDriveState("☁️ 연결됨: "+driveFileName()+" · "+DB.records.length+"건");
-    tab("dash"); alert("드라이브에서 "+DB.records.length+"건을 불러와 동기화했습니다.");
+    tab("dash"); alert("드라이브에서 "+DB.records.length+"건을 불러왔습니다.");
   }catch(e){alert("Drive 새로고침 실패: "+e.message);}
 }
 async function driveWrite(){
