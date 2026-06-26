@@ -441,10 +441,11 @@ async function saveEntry(){
   DB.records.sort((a,b)=>a.date.localeCompare(b.date));
   save();pendingFiles=[];resetEntry();
   // 연결된 모든 곳(드라이브+로컬)에 동시 기록 = 양방향 동기화
-  const synced=await syncAll();
-  let msg="이력에 추가하고 분석을 갱신했습니다.";
-  if(synced.length)msg+="\n"+synced.join(", ")+" 파일도 업데이트했습니다.";
-  else msg+="\n(드라이브/로컬 CSV를 연결하면 자동 저장됩니다. 또는 'CSV 내보내기' 사용.)";
+  const r=await syncAll();
+  let msg="✅ 이력에 추가하고 분석을 갱신했습니다.";
+  if(r.ok.length)msg+="\n파일 저장 성공: "+r.ok.join(", ");
+  if(r.fail.length)msg+="\n⚠ 파일 저장 실패 → "+r.fail.join(", ")+"\n위에서 해당 연결(드라이브/로컬)을 다시 누른 뒤 저장하세요.";
+  if(!r.ok.length&&!r.fail.length)msg+="\n(아직 드라이브/로컬 CSV가 연결되지 않았습니다. 위에서 연결하면 파일에도 자동 저장됩니다. 또는 'CSV 내보내기'.)";
   alert(msg);tab("dash");
 }
 
@@ -534,27 +535,41 @@ function renderTable(){
   const t=document.getElementById("dataTable");
   if(DB.records.length===0){t.innerHTML="<tr><td class='muted'>데이터 없음</td></tr>";return}
   const keys=[];DB.records.forEach(r=>Object.keys(r.vals).forEach(k=>{if(!keys.includes(k))keys.push(k)}));
-  let head="<tr><th>검사일</th><th>검사기관</th><th>메모</th>"+keys.map(k=>`<th data-info="${k}">${k} ⓘ</th>`).join("")+"<th></th></tr>";
+  let head="<tr><th>관리</th><th>검사일</th><th>검사기관</th><th>메모</th>"+keys.map(k=>`<th data-info="${k}">${k} ⓘ</th>`).join("")+"</tr>";
   let body="";
   DB.records.slice().reverse().forEach((rec)=>{
     const realIdx=DB.records.indexOf(rec);
-    body+=`<tr><td>${rec.date}</td><td>${rec.inst||""}</td><td>${rec.note||""}</td>`+
+    body+=`<tr><td><button class="btn danger small" onclick="delRec(${realIdx})">🗑 삭제</button></td><td>${rec.date}</td><td>${rec.inst||""}</td><td>${rec.note||""}</td>`+
       keys.map(k=>{const v=rec.vals[k];if(v==null)return"<td>-</td>";const s=status(k,v);
         const c=s==="bad"?"var(--bad)":s==="warn"?"var(--warn)":"var(--txt)";
         return `<td style="color:${c}">${v}</td>`}).join("")+
-      `<td><button class="btn danger small" onclick="delRec(${realIdx})">삭제</button></td></tr>`;
+      `</tr>`;
   });
   t.innerHTML=head+body;
 }
-function delRec(i){if(confirm("이 기록을 삭제할까요?")){DB.records.splice(i,1);save();renderTable();renderDash()}}
-function clearAll(){if(confirm("모든 데이터를 삭제합니다. 계속할까요?")){DB={records:[],customRefs:[]};save();renderTable();renderDash();renderCharts()}}
+async function delRec(i){
+  if(!confirm("이 기록을 삭제할까요? 연결된 CSV(드라이브/로컬) 파일에도 반영됩니다."))return;
+  DB.records.splice(i,1);save();renderTable();renderDash();
+  const r=await syncAll();
+  if(r.fail.length)alert("⚠ 파일 반영 실패: "+r.fail.join(", ")+"\n연결을 다시 누른 뒤 시도하세요.");
+}
+async function clearAll(){
+  if(!confirm("모든 데이터를 삭제합니다.\n연결된 CSV(드라이브/로컬) 파일도 비워집니다. 계속할까요?"))return;
+  DB={records:[],customRefs:[]};save();renderTable();renderDash();renderCharts();
+  const r=await syncAll();
+  let m="전체 삭제 완료.";
+  if(r.ok.length)m+="\n파일도 비움: "+r.ok.join(", ");
+  if(r.fail.length)m+="\n⚠ 파일 반영 실패: "+r.fail.join(", ");
+  if(!r.ok.length&&!r.fail.length)m+="\n(연결된 파일이 없어 앱에서만 삭제됨)";
+  alert(m);
+}
 
 /* ===== CSV ===== */
 function buildCsv(){
   const keys=[];DB.records.forEach(r=>Object.keys(r.vals).forEach(k=>{if(!keys.includes(k))keys.push(k)}));
-  let csv="검사일,검사기관,메모,"+keys.join(",")+"\n";
+  let csv="검사일,검사기관,메모"+(keys.length?","+keys.join(","):"")+"\n";
   DB.records.forEach(rec=>{
-    csv+=`${rec.date},${(rec.inst||"").replace(/,/g,";")},${(rec.note||"").replace(/,/g,";")},`+keys.map(k=>rec.vals[k]??"").join(",")+"\n";
+    csv+=`${rec.date},${(rec.inst||"").replace(/,/g,";")},${(rec.note||"").replace(/,/g,";")}`+(keys.length?","+keys.map(k=>rec.vals[k]??"").join(","):"")+"\n";
   });
   return "﻿"+csv;
 }
@@ -583,10 +598,10 @@ async function linkCsv(){
     csvHandle=h; try{await idbSet("csv",h);}catch(e){}
     // 로컬 파일 내용을 현재 데이터와 합침(merge) 후, 합쳐진 전체를 모든 연결처에 반영
     const f=await h.getFile(); importCsvText(await f.text(),false);
-    const synced=await syncAll();
+    const r=await syncAll();
     setCsvState("📄 연결됨: "+h.name+" · "+DB.records.length+"건");
     tab("dash");
-    alert("로컬 CSV 연결 완료. 데이터를 합쳐 총 "+DB.records.length+"건으로 동기화했습니다."+(synced.length?"\n동기화: "+synced.join(", "):""));
+    alert("로컬 CSV 연결 완료. 데이터를 합쳐 총 "+DB.records.length+"건으로 동기화했습니다."+(r.ok.length?"\n저장: "+r.ok.join(", "):"")+(r.fail.length?"\n⚠ 실패: "+r.fail.join(", "):""));
   }catch(e){if(e.name!=="AbortError")alert("연결 실패: "+e.message);}
 }
 // 연결된 CSV 파일을 다시 읽어 화면 갱신
@@ -691,10 +706,10 @@ async function driveConnect(){
     }
     driveFileId=id; saveDriveCfg();
     importCsvText(await driveReadId(id),false);   // 드라이브 내용을 현재 데이터와 합침(merge)
-    const synced=await syncAll();                  // 합쳐진 전체를 드라이브·로컬에 모두 반영
+    const r=await syncAll();                       // 합쳐진 전체를 드라이브·로컬에 모두 반영
     setDriveState("☁️ 연결됨: "+name+" · "+DB.records.length+"건");
     tab("dash");
-    alert("구글드라이브 연결 완료. 로컬과 드라이브 데이터를 합쳐 총 "+DB.records.length+"건으로 동기화했습니다."+(synced.length?"\n동기화: "+synced.join(", "):""));
+    alert("구글드라이브 연결 완료. 데이터를 합쳐 총 "+DB.records.length+"건으로 동기화했습니다."+(r.ok.length?"\n저장: "+r.ok.join(", "):"")+(r.fail.length?"\n⚠ 실패: "+r.fail.join(", "):""));
   }catch(e){setDriveState("연결 실패: "+e.message);alert("드라이브 연결 실패: "+e.message);}
 }
 async function driveReload(){
@@ -710,12 +725,21 @@ async function driveWrite(){
   if(!driveFileId)return "nolink";
   try{ await driveWriteId(driveFileId); return "drive"; }catch(e){console.warn(e);return "error";}
 }
-/* 현재 데이터(DB)를 연결된 모든 곳(드라이브·로컬)에 기록 = 양방향 동기화 */
+/* 현재 데이터(DB)를 연결된 모든 곳(드라이브·로컬)에 기록 = 양방향 동기화.
+   성공/실패를 상세히 반환해 조용한 실패를 막는다. */
 async function syncAll(){
-  const done=[];
-  if(driveFileId){try{await driveWriteId(driveFileId);done.push("☁️드라이브");}catch(e){console.warn(e);}}
-  if(csvHandle){const w=await writeCsv();if(w==="file")done.push("📄로컬");}
-  return done;
+  const ok=[], fail=[];
+  if(driveFileId){
+    try{ await driveWriteId(driveFileId); ok.push("☁️드라이브"); }
+    catch(e){ fail.push("드라이브("+e.message+")"); }
+  }
+  if(csvHandle){
+    try{ const w=await writeCsv();
+      if(w==="file")ok.push("📄로컬");
+      else fail.push("로컬("+(w==="denied"?"쓰기권한 거부":w)+")");
+    }catch(e){ fail.push("로컬("+e.message+")"); }
+  }
+  return {ok,fail};
 }
 function importCsvText(text,replace){
   try{
