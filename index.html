@@ -33,6 +33,7 @@
     background:var(--panel2);color:var(--txt);cursor:pointer;font-size:14px;font-weight:600}
   .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .btn.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
+  .btn.small{padding:5px 11px;font-size:12px}
   .btn:hover{filter:brightness(1.1)}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   input,select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
@@ -140,6 +141,7 @@
 
   <!-- 대시보드 -->
   <section id="dash">
+    <div id="saveBanner"></div>
     <div class="card">
       <h2>최근 검사 요약</h2>
       <div id="dashEmpty" class="muted">아직 데이터가 없습니다. "검사 입력" 탭에서 첫 결과를 등록하세요.</div>
@@ -464,13 +466,36 @@ async function saveEntry(){
   DB.records.push({date,inst:document.getElementById("entryInst").value.trim(),note:document.getElementById("entryNote").value.trim(),vals,files:pendingFiles});
   DB.records.sort((a,b)=>a.date.localeCompare(b.date));
   save();pendingFiles=[];resetEntry();
-  // 연결된 모든 곳(드라이브+로컬)에 동시 기록 = 양방향 동기화
+  // 즉시 화면 반응(모바일에서 멈춘 듯 보이지 않게) + 그래프 갱신
+  setSaveBanner("✅ 이력에 추가했습니다 (총 "+DB.records.length+"건). 드라이브 동기화 중…","");
+  tab("dash");
+  // 백그라운드 동기화 (실패해도 멈추지 않음)
   const r=await syncAll();
-  let msg="✅ 이력에 추가하고 분석을 갱신했습니다.";
-  if(r.ok.length)msg+="\n파일 저장 성공: "+r.ok.join(", ");
-  if(r.fail.length)msg+="\n⚠ 드라이브 저장 실패 → "+r.fail.join(", ")+"\n'구글드라이브 연결'을 다시 누른 뒤 저장하세요.";
-  if(!r.ok.length&&!r.fail.length)msg+="\n(아직 구글드라이브가 연결되지 않았습니다. 위에서 '구글드라이브 연결'을 하면 파일에 자동 저장됩니다. 임시 백업은 'CSV 내보내기'.)";
-  alert(msg);tab("dash");
+  if(r.ok.length){
+    setSaveBanner("✅ 저장 완료 · 드라이브 동기화됨","ok");
+  }else if(r.fail.length){
+    setSaveBanner("⚠ 앱에는 저장됐지만 <b>드라이브 동기화 실패</b>: "+r.fail.join(", ")+" &nbsp;<button class='btn small' onclick='driveSyncNow()'>☁️ 지금 드라이브에 저장</button>","bad");
+  }else{
+    setSaveBanner("✅ 저장됨 · 구글드라이브 미연결 &nbsp;<button class='btn small' onclick='driveConnect()'>구글드라이브 연결</button>","warn");
+  }
+}
+function setSaveBanner(html,cls){
+  const e=document.getElementById("saveBanner");if(!e)return;
+  if(!html){e.innerHTML="";return;}
+  const c=(cls==="ok"||cls==="bad"||cls==="warn")?cls:"";
+  e.innerHTML="<div class=\"alert "+c+"\" style=\"margin-bottom:14px\">"+html+"</div>";
+}
+// 직접 탭(버튼 제스처)으로 드라이브에 즉시 저장 — 필요 시 정식 인증 허용
+async function driveSyncNow(){
+  if(!driveFileId)return driveConnect();
+  setSaveBanner("☁️ 드라이브에 저장 중…","");
+  try{
+    await driveGetToken(false);            // 버튼 제스처 → 팝업 허용(모바일 안전)
+    await driveWriteId(driveFileId);
+    setSaveBanner("✅ 드라이브에 저장 완료","ok");
+  }catch(e){
+    setSaveBanner("⚠ 드라이브 저장 실패: "+e.message+" &nbsp;<button class='btn small' onclick='driveConnect()'>다시 연결</button>","bad");
+  }
 }
 
 /* drag & drop */
@@ -692,7 +717,7 @@ async function driveGetToken(silent){
       callback:(r)=>{ done=true; if(r&&r.error)return rej(new Error(r.error)); gToken=r.access_token; gTokenExp=Date.now()+((r.expires_in||3600)*1000); res(gToken); }
     });
     try{ gTokenClient.requestAccessToken(silent?{prompt:""}:{}); }catch(e){ return rej(e); }
-    setTimeout(()=>{ if(!done)rej(new Error(silent?"토큰 만료 — '구글드라이브 연결'을 다시 누르세요":"인증 시간 초과")); }, silent?8000:60000);
+    setTimeout(()=>{ if(!done)rej(new Error(silent?"토큰 만료 — '구글드라이브 연결' 또는 '지금 드라이브에 저장'을 누르세요":"인증 시간 초과")); }, silent?6000:60000);
   });
 }
 async function driveFetch(url,opt){
